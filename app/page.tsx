@@ -1,181 +1,233 @@
-'use client';
+import { useState } from 'react';
+import { BarChart3, Scale, DollarSign, TrendingUp, Upload } from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
-import { useState, useEffect } from 'react';
-
-interface Material {
-  name: string;
-  kg: number;
+interface MaterialData {
+  material: string;
+  peso: number;
   valor: number;
 }
 
-const Dashboard = () => {
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+const sampleData: MaterialData[] = [
+  { material: 'Cobre', peso: 1500.5, valor: 25000.00 },
+  { material: 'Latão', peso: 800.0, valor: 12000.00 },
+  { material: 'Alumínio', peso: 2000.0, valor: 8000.00 },
+];
 
-  const exampleData: Material[] = [
-    { name: 'Cobre', kg: 1500, valor: 25000 },
-    { name: 'Latão', kg: 800, valor: 12000 },
-    { name: 'Alumínio', kg: 2000, valor: 8000 },
-  ];
+interface CardProps {
+  title: string;
+  value: string;
+  color: 'orange' | 'green' | 'blue';
+  Icon: React.ElementType;
+}
 
-  const exampleData2: Material[] = [
-    { name: 'Cobre', kg: 1200, valor: 22000 },
-    { name: 'Latão', kg: 1200, valor: 18000 },
-    { name: 'Alumínio', kg: 2500, valor: 10000 },
-  ];
+function IndicatorCard({ title, value, color, Icon }: CardProps) {
+  return (
+    <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-200 hover:shadow-2xl transition-all duration-300">
+      <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br from-${color}-400 to-${color}-500 flex items-center justify-center mb-6 shadow-lg`}>
+        <Icon className="w-8 h-8 text-white" />
+      </div>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+      <p className="text-3xl font-bold text-gray-900">{value}</p>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    setMaterials(exampleData);
-  }, []);
+function UploadArea({ onUpload }: { onUpload: (files: FileList) => void }) {
+  const [dragActive, setDragActive] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.name.endsWith('.xlsx')) {
-      setFile(selectedFile);
-      // Simulate Excel parsing by loading alternative example data
-      setMaterials(exampleData2);
-    } else {
-      alert('Por favor, selecione um arquivo .xlsx válido.');
-      e.target.value = '';
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
     }
   };
 
-  const totalKg = materials.reduce((sum, m) => sum + m.kg, 0);
-  const totalValor = materials.reduce((sum, m) => sum + m.valor, 0);
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      onUpload(e.dataTransfer.files);
+    }
+  };
 
-  const maxValor = Math.max(...materials.map((m) => m.valor), 1);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files[0]) {
+      onUpload(files);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-yellow-50 to-gray-100 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-600 to-yellow-600 bg-clip-text text-transparent mb-4">
-            Dashboard Metalfama
-          </h1>
-          <p className="text-xl text-gray-700 font-semibold">Painel de Caique</p>
-        </div>
+    <div
+      className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+        dragActive
+          ? 'border-blue-500 bg-blue-50 shadow-xl'
+          : 'border-gray-300 hover:border-gray-400'
+      }`}
+      onDragEnter={handleDrag}
+      onDragLeave={handleDrag}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
+      <input
+        type="file"
+        className="hidden"
+        accept=".xlsx,.xls"
+        onChange={handleChange}
+        id="file-upload"
+      />
+      <label htmlFor="file-upload">
+        <Upload className="mx-auto w-16 h-16 text-gray-400 mb-4" />
+        <h3 className="text-xl font-semibold mb-2">Arraste seu arquivo Excel ou clique aqui</h3>
+        <p className="text-gray-500">Suporte para .xlsx e .xls</p>
+      </label>
+    </div>
+  );
+}
 
-        <div className="mb-12 p-6 bg-white rounded-xl shadow-xl border border-gray-200">
-          <label className="block text-lg font-semibold text-gray-900 mb-4">
-            📁 Carregar Arquivo Excel (.xlsx)
-          </label>
-          <input
-            type="file"
-            accept=".xlsx"
-            onChange={handleFileUpload}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-gradient-to-r file:from-orange-500 file:to-yellow-500 file:text-white hover:file:from-orange-600 hover:file:to-yellow-600 shadow-md transition-all"
-          />
-          {file && (
-            <p className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 font-medium">
-              ✅ Arquivo carregado: <span className="font-bold">{file.name}</span>
-            </p>
-          )}
-        </div>
+function Chart({ data }: { data: MaterialData[] }) {
+  return (
+    <div className="bg-white shadow-xl rounded-xl p-6">
+      <h3 className="text-xl font-semibold mb-6">Faturamento por Material</h3>
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="material" />
+          <YAxis />
+          <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Faturamento']} />
+          <Bar dataKey="valor" fill="#3B82F6" name="Faturamento (R$)" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
-        {/* Indicadores */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
-          <div className="bg-white p-8 rounded-xl shadow-lg border-l-4 border-orange-500 hover:shadow-xl transition-all">
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center mr-4">
-                <span className="text-2xl">⚖️</span>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Total Faturado</h2>
-            </div>
-            <p className="text-5xl font-black text-orange-600">{totalKg.toLocaleString()}</p>
-            <p className="text-lg text-gray-600 font-medium">KG</p>
-          </div>
-
-          <div className="bg-white p-8 rounded-xl shadow-lg border-l-4 border-emerald-500 hover:shadow-xl transition-all">
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center mr-4">
-                <span className="text-2xl">💰</span>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Total em R$</h2>
-            </div>
-            <p className="text-5xl font-black text-emerald-600">
-              R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-
-          <div className="bg-white p-8 rounded-xl shadow-lg border-l-4 border-blue-500 hover:shadow-xl transition-all">
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center mr-4">
-                <span className="text-2xl">📊</span>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Materiais</h2>
-            </div>
-            <p className="text-5xl font-black text-blue-600">{materials.length}</p>
-            <p className="text-lg text-gray-600 font-medium">Tipos</p>
-          </div>
-        </div>
-
-        {/* Total por Material */}
-        <div className="bg-white p-8 rounded-xl shadow-lg mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8 flex items-center">
-            📈 Total por Material
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {materials.map((mat, idx) => (
-              <div key={idx} className="p-6 bg-gradient-to-br rounded-xl shadow-md hover:shadow-lg transition-all border border-gray-200 group">
-                <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl shadow-lg flex items-center justify-center text-2xl font-bold ${
-                  mat.name === 'Cobre'
-                    ? 'bg-orange-500 text-white'
-                    : mat.name === 'Latão'
-                    ? 'bg-yellow-500 text-white'
-                    : 'bg-gray-400 text-white'
-                }`}>
-                  {mat.name.charAt(0)}
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2 text-center group-hover:text-orange-600 transition-colors">{mat.name}</h3>
-                <p className="text-2xl font-black text-gray-800 mb-1 text-center">
-                  {mat.kg.toLocaleString()} <span className="text-lg font-normal text-gray-600">KG</span>
-                </p>
-                <p className="text-xl font-bold text-emerald-600 text-center">
-                  R$ {mat.valor.toLocaleString('pt-BR')}
-                </p>
-              </div>
+function DetailsTable({ data }: { data: MaterialData[] }) {
+  return (
+    <div className="bg-white shadow-xl rounded-xl overflow-hidden">
+      <div className="p-6 border-b border-gray-200">
+        <h3 className="text-xl font-semibold text-gray-900">Detalhes por Material</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Material</th>
+              <th className="px-6 py-4 text-right text-xs font-semibold text-gray-900 uppercase tracking-wider">Peso (KG)</th>
+              <th className="px-6 py-4 text-right text-xs font-semibold text-gray-900 uppercase tracking-wider">Valor (R$)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {data.map((item, index) => (
+              <tr key={index} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.material}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                  {item.peso.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-green-600">
+                  {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </td>
+              </tr>
             ))}
-          </div>
-        </div>
-
-        {/* Gráfico */}
-        <div className="bg-white p-8 rounded-xl shadow-lg">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8 flex items-center">
-            📊 Gráfico de Barras Interativo - Valor por Material
-          </h2>
-          <div className="relative h-96 p-8 bg-gradient-to-b from-gray-50 to-white rounded-xl border-2 border-gray-200">
-            <div className="flex items-end justify-around h-full gap-4">
-              {materials.map((mat, idx) => {
-                const barHeight = (mat.valor / maxValor) * 90; // 90% max height
-                const colorClass = mat.name === 'Cobre' 
-                  ? 'bg-orange-500 hover:bg-orange-600'
-                  : mat.name === 'Latão' 
-                  ? 'bg-yellow-500 hover:bg-yellow-600'
-                  : 'bg-gray-400 hover:bg-gray-500';
-
-                return (
-                  <div key={idx} className="flex flex-col items-center group cursor-pointer flex-1 max-w-[80px] py-4">
-                    <div
-                      className={`w-16 rounded-b-xl shadow-lg transition-all duration-300 ease-out group-hover:scale-105 group-hover:shadow-2xl ${colorClass}`}
-                      style={{ height: `${barHeight}%` }}
-                    />
-                    <span className="mt-4 text-sm font-bold text-gray-800 uppercase tracking-wide group-hover:text-gray-900">
-                      {mat.name}
-                    </span>
-                    {/* Tooltip */}
-                    <div className="absolute -bottom-20 left-1/2 transform -translate-x-1/2 px-3 py-2 bg-black/90 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap z-10 shadow-2xl">
-                      R$ {mat.valor.toLocaleString('pt-BR')} <br />
-                      <span className="text-gray-300 text-xs">{mat.kg.toLocaleString()} KG</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
     </div>
   );
-};
+}
 
-export default Dashboard;
+'use client';
+
+export default function Dashboard() {
+  const [data, setData] = useState(sampleData);
+
+  const totalKG = data.reduce((sum, d) => sum + d.peso, 0);
+  const totalValor = data.reduce((sum, d) => sum + d.valor, 0);
+  const ticketMedio = totalKG > 0 ? totalValor / totalKG : 0;
+
+  const totalKGStr = totalKG.toLocaleString('pt-BR', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }) + ' KG';
+
+  const totalValorStr = totalValor.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+
+  const ticketMedioStr =
+    ticketMedio.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }) + ' / KG';
+
+  const handleUpload = (files: FileList) => {
+    const file = files[0];
+    if (file) {
+      console.log('Arquivo Excel carregado:', file.name);
+      // TODO: Implementar parsing com biblioteca 'xlsx'
+      // Por enquanto, recarrega dados de exemplo
+      setData(sampleData);
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <header className="text-center mb-16">
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <BarChart3 className="w-16 h-16 text-blue-600" />
+            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-500 via-red-500 to-orange-600 bg-clip-text text-transparent drop-shadow-lg">
+              Dashboard de Faturamento | Metalfama
+            </h1>
+          </div>
+        </header>
+
+        {/* Indicadores */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <IndicatorCard
+            title="Total em KG"
+            value={totalKGStr}
+            color="orange"
+            Icon={Scale}
+          />
+          <IndicatorCard
+            title="Total em R$"
+            value={totalValorStr}
+            color="green"
+            Icon={DollarSign}
+          />
+          <IndicatorCard
+            title="Ticket Médio"
+            value={ticketMedioStr}
+            color="blue"
+            Icon={TrendingUp}
+          />
+        </div>
+
+        {/* Upload e Gráfico */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          <UploadArea onUpload={handleUpload} />
+          <Chart data={data} />
+        </div>
+
+        {/* Tabela */}
+        <DetailsTable data={data} />
+      </div>
+    </main>
+  );
+}
