@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useEffect } from 'react';
+import { Scale, DollarSign, TrendingUp, ChevronDown } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -10,231 +10,132 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
+  ResponsiveContainer
 } from 'recharts';
-import { Upload, Scale, DollarSign, TrendingUp } from 'lucide-react';
 
-interface Row {
-  material: string;
+type MaterialData = {
+  name: string;
   peso: number;
-  valor: number;
-}
+  custo: number;
+  lucro: number;
+};
 
-const initialRows: Row[] = [
-  { material: 'Aço Carbono', peso: 150.5, valor: 750.25 },
-  { material: 'Aço Inox', peso: 80.2, valor: 1200.50 },
-  { material: 'Alumínio', peso: 45.0, valor: 300.75 },
-  { material: 'Cobre', peso: 20.1, valor: 950.00 },
+const sampleData: MaterialData[] = [
+  { name: 'Cobre', peso: 150, custo: 12750, lucro: 3520 },
+  { name: 'Latão', peso: 200, custo: 13000, lucro: 2850 },
+  { name: 'Alumínio', peso: 300, custo: 13725, lucro: 2210 },
+  { name: 'Inox', peso: 120, custo: 11436, lucro: 4890 },
 ];
 
-export default function HomePage() {
-  const [rows, setRows] = useState<Row[]>(initialRows);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function Page() {
+  const [data, setData] = useState<MaterialData[]>([]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const materials = useMemo(() => {
-    const agg: Record<string, { peso: number; valor: number }> = {};
-    for (const row of rows) {
-      if (!agg[row.material]) {
-        agg[row.material] = { peso: 0, valor: 0 };
-      }
-      agg[row.material].peso += row.peso;
-      agg[row.material].valor += row.valor;
-    }
-    return Object.entries(agg).map(([name, stats]) => ({
-      name,
-      peso: stats.peso,
-      valor: stats.valor,
-    }));
-  }, [rows]);
+  // Lógica de leitura de Excel (exemplo com fetch de arquivo público):
+  // Para uso real, instale 'xlsx' e descomente/adapte:
+  // import * as XLSX from 'xlsx';
+  // useEffect(() => {
+  //   fetch('/data.xlsx')
+  //     .then((r) => r.arrayBuffer())
+  //     .then((buffer) => {
+  //       const wb = XLSX.read(buffer, { type: 'array' });
+  //       const ws = wb.Sheets[wb.SheetNames[0]];
+  //       const json = XLSX.utils.sheet_to_json<Record<string, any>>(ws) as MaterialData[];
+  //       setData(json);
+  //     })
+  //     .catch((err) => console.error('Erro ao ler Excel:', err));
+  // }, []);
 
-  const totalPeso = useMemo(
-    () => rows.reduce((sum, r) => sum + r.peso, 0),
-    [rows]
-  );
-  const totalValor = useMemo(
-    () => rows.reduce((sum, r) => sum + r.valor, 0),
-    [rows]
-  );
-  const ticketMedio =
-    useMemo(
-      () => (rows.length > 0 ? totalValor / rows.length : 0),
-      [rows, totalValor]
-    );
+  useEffect(() => {
+    // Usando dados de exemplo simulando leitura de Excel
+    setData(sampleData);
+  }, []);
 
-  const handleFileChange = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const colors: Record<string, string> = {
+    Cobre: 'bg-orange-500',
+    Latão: 'bg-yellow-500',
+    Alumínio: 'bg-slate-400',
+    Inox: 'bg-blue-600',
+  };
 
-    const reader = new FileReader();
-    reader.onload = (evt: ProgressEvent<FileReader>) => {
-      const data = evt.target?.result as ArrayBuffer | null;
-      if (!data) return;
+  const totalPeso = data.reduce((sum, d) => sum + d.peso, 0);
+  const totalCusto = data.reduce((sum, d) => sum + d.custo, 0);
+  const totalLucro = data.reduce((sum, d) => sum + d.lucro, 0);
 
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet);
-
-      const newRows: Row[] = jsonData
-        .map((row: Record<string, any>) => ({
-          material: String(row.Material || ''),
-          peso: parseFloat(String(row['Peso (KG)'] || row.Peso || '0')),
-          valor: parseFloat(String(row['Valor (R$)'] || row.Valor || '0')),
-        }))
-        .filter((row) => row.material.trim() && !isNaN(row.peso) && row.peso > 0);
-
-      setRows(newRows);
-      event.target.value = '';
-    };
-    reader.readAsArrayBuffer(file);
+  const toggle = (name: string) => {
+    setExpanded((prev) => ({ ...prev, [name]: !prev[name] }));
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-slate-50 py-24 px-4 sm:px-6 lg:px-8 font-sans antialiased">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-5xl font-black bg-gradient-to-r from-gray-800 via-gray-700 to-gray-900 bg-clip-text text-transparent mb-16 text-center drop-shadow-lg">
-          Metalfama Premium Dashboard
-        </h1>
-
-        <div className="mb-12 flex justify-center">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="group bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-12 py-6 rounded-3xl shadow-2xl hover:shadow-3xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-4 font-bold text-xl"
-          >
-            <Upload className="w-8 h-8 group-hover:scale-110 transition-transform duration-300" />
-            Carregar Excel
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-10 border border-white/50 hover:shadow-3xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-center w-20 h-20 bg-blue-100 rounded-2xl mx-auto mb-6 shadow-lg">
-              <Scale className="w-10 h-10 text-blue-600" />
-            </div>
-            <h3 className="text-4xl font-black text-gray-900 mb-2 text-center">
-              {totalPeso.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KG
-            </h3>
-            <p className="text-gray-600 font-semibold text-center text-lg">Total Peso</p>
+        {/* Indicadores de Topo */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+          <div className="bg-white shadow-xl rounded-2xl overflow-hidden p-8 text-center">
+            <Scale className="mx-auto h-12 w-12 text-emerald-500 mb-4" />
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">Peso Total</h3>
+            <p className="text-4xl font-black text-slate-900">{totalPeso} kg</p>
           </div>
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-10 border border-white/50 hover:shadow-3xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-center w-20 h-20 bg-green-100 rounded-2xl mx-auto mb-6 shadow-lg">
-              <DollarSign className="w-10 h-10 text-green-600" />
-            </div>
-            <h3 className="text-4xl font-black text-gray-900 mb-2 text-center">
-              {totalValor.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </h3>
-            <p className="text-gray-600 font-semibold text-center text-lg">Total Valor</p>
+          <div className="bg-white shadow-xl rounded-2xl overflow-hidden p-8 text-center">
+            <DollarSign className="mx-auto h-12 w-12 text-blue-500 mb-4" />
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">Custo Total</h3>
+            <p className="text-4xl font-black text-slate-900">R$ {totalCusto.toLocaleString('pt-BR')}</p>
           </div>
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-10 border border-white/50 hover:shadow-3xl hover:-translate-y-1 transition-all duration-300">
-            <div className="flex items-center justify-center w-20 h-20 bg-purple-100 rounded-2xl mx-auto mb-6 shadow-lg">
-              <TrendingUp className="w-10 h-10 text-purple-600" />
-            </div>
-            <h3 className="text-4xl font-black text-gray-900 mb-2 text-center">
-              {ticketMedio.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </h3>
-            <p className="text-gray-600 font-semibold text-center text-lg">Ticket Médio</p>
+          <div className="bg-white shadow-xl rounded-2xl overflow-hidden p-8 text-center">
+            <TrendingUp className="mx-auto h-12 w-12 text-purple-500 mb-4" />
+            <h3 className="text-xl font-semibold text-slate-900 mb-2">Lucro Projetado</h3>
+            <p className="text-4xl font-black text-emerald-600">R$ {totalLucro.toLocaleString('pt-BR')}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-8 lg:p-10">
-            <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-              Gráfico por Material
-            </h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={materials}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  angle={-45}
-                  height={80}
-                  textAnchor="end"
-                  fontSize={12}
-                />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey="peso"
-                  fill="#3b82f6"
-                  name="Peso (KG)"
-                  radius={[4, 4, 0, 0]}
-                />
-                <Bar
-                  dataKey="valor"
-                  fill="#10b981"
-                  name="Valor (R$)"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-8 lg:p-10 overflow-hidden">
-            <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-              Listagem Detalhada
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
-                    <th className="px-6 py-4 text-left font-bold text-gray-800 uppercase tracking-wider">
-                      Material
-                    </th>
-                    <th className="px-6 py-4 text-right font-bold text-gray-800 uppercase tracking-wider">
-                      Peso (KG)
-                    </th>
-                    <th className="px-6 py-4 text-right font-bold text-gray-800 uppercase tracking-wider">
-                      Valor (R$)
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <tr
-                      key={index}
-                      className="hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
-                    >
-                      <td className="px-6 py-4 font-medium text-gray-900">
-                        {row.material}
-                      </td>
-                      <td className="px-6 py-4 text-right text-gray-700 font-mono">
-                        {row.peso.toLocaleString('pt-BR', {
-                          maximumFractionDigits: 1,
-                        })}
-                      </td>
-                      <td className="px-6 py-4 text-right text-gray-700 font-mono">
-                        {row.valor.toLocaleString('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
-                        })}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Cards de Materiais com Accordions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+          {data.map((item) => (
+            <div key={item.name} className="bg-white shadow-xl rounded-2xl overflow-hidden">
+              <div
+                className={`h-20 flex items-center justify-between px-8 cursor-pointer transition-all hover:shadow-2xl ${colors[item.name]} text-white`}
+                onClick={() => toggle(item.name)}
+              >
+                <h2 className="text-2xl font-bold tracking-tight">{item.name}</h2>
+                <ChevronDown className={`h-6 w-6 transition-transform duration-200 ${expanded[item.name] ? 'rotate-180' : ''}`} />
+              </div>
+              <div className={`p-8 bg-slate-50 ${expanded[item.name] ? 'block' : 'hidden'} transition-all duration-300`}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Peso</p>
+                    <p className="text-3xl font-black text-slate-900 mt-1">{item.peso} kg</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Custo</p>
+                    <p className="text-3xl font-black text-slate-900 mt-1">R$ {item.custo.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 uppercase tracking-wide">Lucro</p>
+                    <p className="text-3xl font-black text-emerald-600 mt-1">R$ {item.lucro.toLocaleString('pt-BR')}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-            {rows.length === 0 && (
-              <p className="text-center text-gray-500 mt-12 py-12 text-xl">
-                Carregue um arquivo Excel para visualizar os dados.
-              </p>
-            )}
-          </div>
+          ))}
+        </div>
+
+        {/* Gráfico */}
+        <div className="bg-white shadow-xl rounded-2xl overflow-hidden p-12">
+          <h2 className="text-3xl font-bold text-slate-900 mb-8 text-center tracking-tight">Análise de Lucro por Material</h2>
+          <ResponsiveContainer width="100%" height={500}>
+            <BarChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="name" fontSize={14} fontWeight="600" />
+              <YAxis fontSize={14} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="peso" fill="#ef4444" name="Peso (kg)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="custo" fill="#3b82f6" name="Custo (R$)" stackId="a" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="lucro" fill="#10b981" name="Lucro (R$)" stackId="a" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
