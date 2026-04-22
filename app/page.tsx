@@ -1,247 +1,295 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Scale, DollarSign, TrendingUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Scale, DollarSign, ShoppingCart, Upload, ChevronDown } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
 
-type Row = {
-  Material: string;
-  Peso: number;
-  Valor: number;
-};
-
-type Totals = {
+type DataRow = {
+  material: string;
   peso: number;
   valor: number;
-  ticket: number;
 };
 
-type ProcessedData = {
-  groups: Record<string, Row[]>;
-  totals: Totals;
-  chartData: Array<{ name: string; peso: number; valor: number }>;
+type Stats = {
+  peso: number;
+  valor: number;
+  count: number;
+  ticketMedio: number;
 };
 
-const exampleData: any[] = [
-  { Material: 'Cobre', Peso: 150.5, Valor: 75250 },
-  { Material: 'Cobre', Peso: 200, Valor: 100000 },
-  { Material: 'Latão', Peso: 80.2, Valor: 32080 },
-  { Material: 'Alumínio', Peso: 300, Valor: 45000 },
-  { Material: 'Inox', Peso: 50, Valor: 12500 },
+const materialColors: Record<string, string> = {
+  Cobre: 'bg-orange-500',
+  Latão: 'bg-yellow-500',
+  Alumínio: 'bg-gray-500',
+  Inox: 'bg-blue-500',
+};
+
+const initialData: DataRow[] = [
+  { material: 'Cobre', peso: 150.5, valor: 12045 },
+  { material: 'Cobre', peso: 75.2, valor: 6016 },
+  { material: 'Latão', peso: 180.0, valor: 16200 },
+  { material: 'Latão', peso: 95.5, valor: 8595 },
+  { material: 'Latão', peso: 120.3, valor: 10827 },
+  { material: 'Alumínio', peso: 300.0, valor: 9000 },
+  { material: 'Alumínio', peso: 250.7, valor: 7521 },
+  { material: 'Inox', peso: 100.0, valor: 15000 },
+  { material: 'Inox', peso: 80.4, valor: 12060 },
 ];
 
-export default function Dashboard() {
-  const [rawData, setRawData] = useState<any[]>([]);
+const Dashboard: React.FC = () => {
+  const [data, setData] = useState<DataRow[]>([]);
+  const [materials, setMaterials] = useState<Record<string, Stats>>({});
+  const [totals, setTotals] = useState<Stats>({ peso: 0, valor: 0, count: 0, ticketMedio: 0 });
+  const [chartData, setChartData] = useState<{ name: string; peso: number }[]>([]);
   const [openMaterials, setOpenMaterials] = useState<Set<string>>(new Set(['Cobre']));
+  const [dragActive, setDragActive] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const today = new Date().toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+  const computeAggregates = useCallback((dataRows: DataRow[]): { materials: Record<string, Stats>; totals: Stats } => {
+    const mats: Record<string, Stats> = {};
+    let totPeso = 0;
+    let totValor = 0;
+    let totCount = 0;
 
-  const processed: ProcessedData = useMemo(() => {
-    const groups: Record<string, Row[]> = {};
-    let totalPeso = 0;
-    let totalValor = 0;
-
-    rawData.forEach((row: any) => {
-      const mat = row.Material?.toString() || '';
-      const peso = parseFloat(row.Peso as string) || 0;
-      const valor = parseFloat(row.Valor as string) || 0;
-
-      if (mat) {
-        if (!groups[mat]) groups[mat] = [];
-        groups[mat].push({ Material: mat, Peso: peso, Valor: valor });
-        totalPeso += peso;
-        totalValor += valor;
+    for (const row of dataRows) {
+      const m = row.material;
+      if (!mats[m]) {
+        mats[m] = { peso: 0, valor: 0, count: 0, ticketMedio: 0 };
       }
-    });
-
-    const ticketMedio = totalPeso > 0 ? totalValor / totalPeso : 0;
-
-    const totals: Totals = { peso: totalPeso, valor: totalValor, ticket: ticketMedio };
-
-    const chartData = Object.entries(groups).map(([name, items]) => ({
-      name,
-      peso: items.reduce((sum, r) => sum + r.Peso, 0),
-      valor: items.reduce((sum, r) => sum + r.Valor, 0),
-    }));
-
-    return { groups, totals, chartData };
-  }, [rawData]);
-
-  const toggleMaterial = useCallback((mat: string) => {
-    const newSet = new Set(openMaterials);
-    if (newSet.has(mat)) {
-      newSet.delete(mat);
-    } else {
-      newSet.add(mat);
+      mats[m].peso += row.peso;
+      mats[m].valor += row.valor;
+      mats[m].count += 1;
+      totPeso += row.peso;
+      totValor += row.valor;
+      totCount += 1;
     }
-    setOpenMaterials(newSet);
-  }, [openMaterials]);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    for (const m in mats) {
+      mats[m].ticketMedio = mats[m].peso > 0 ? mats[m].valor / mats[m].peso : 0;
+    }
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const json = XLSX.utils.sheet_to_json(ws);
-      setRawData(json as any[]);
+    const totalStats: Stats = {
+      peso: totPeso,
+      valor: totValor,
+      count: totCount,
+      ticketMedio: totPeso > 0 ? totValor / totPeso : 0,
     };
-    reader.readAsBinaryString(file);
-  };
 
-  useEffect(() => {
-    setRawData(exampleData);
+    return { materials: mats, totals: totalStats };
   }, []);
 
-  const materialColors: Record<string, string> = {
-    Cobre: 'bg-orange-500',
-    Latão: 'bg-yellow-500',
-    Alumínio: 'bg-gray-400',
-    Inox: 'bg-blue-500',
+  useEffect(() => {
+    setData(initialData);
+  }, []);
+
+  useEffect(() => {
+    if (data.length > 0) {
+      const aggs = computeAggregates(data);
+      setMaterials(aggs.materials);
+      setTotals(aggs.totals);
+      setChartData(
+        Object.entries(aggs.materials).map(([name, stats]) => ({
+          name,
+          peso: stats.peso,
+        }))
+      );
+    }
+  }, [data, computeAggregates]);
+
+  const toggleMaterial = (mat: string) => {
+    setOpenMaterials((prev) => {
+      const next = new Set(prev);
+      if (next.has(mat)) {
+        next.delete(mat);
+      } else {
+        next.add(mat);
+      }
+      return next;
+    });
   };
 
-  const formatCurrency = (value: number) =>
-    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+      processFile(file);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  };
+
+  const processFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const arrayBuffer = e.target?.result as ArrayBuffer;
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet) as DataRow[];
+      setData(json);
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const formatCurrency = (value: number) => {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-6 lg:px-12">
+    <div className="min-h-screen bg-slate-50 py-12 px-6 md:px-12 lg:px-24">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-4">
-          <h1 className="text-4xl lg:text-5xl font-black text-slate-900">
-            Metalfama | Inteligência de Vendas
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-4 md:gap-0">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-500 to-yellow-500 bg-clip-text text-transparent">
+            Metalfama | BI
           </h1>
-          <p className="text-xl text-slate-500">{today}</p>
-        </div>
+          <div className="text-xl font-semibold text-gray-700">
+            {new Date().toLocaleDateString('pt-BR')}
+          </div>
+        </header>
 
         {/* KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
-            <Scale className="h-20 w-20 text-emerald-500 mx-auto mb-6 opacity-75" />
-            <div className="text-4xl font-black text-slate-900 mb-2">
-              {processed.totals.peso.toFixed(2)}
-            </div>
-            <div className="text-xl font-semibold text-slate-600">Peso Total KG</div>
+          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
+            <Scale className="w-16 h-16 mx-auto mb-4 text-orange-500" />
+            <h2 className="text-3xl font-bold text-gray-900">
+              {totals.peso.toLocaleString('pt-BR')} kg
+            </h2>
+            <p className="text-gray-600 mt-2 text-lg">Peso Total</p>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
-            <DollarSign className="h-20 w-20 text-amber-500 mx-auto mb-6 opacity-75" />
-            <div className="text-4xl font-black text-slate-900 mb-2">
-              {formatCurrency(processed.totals.valor)}
-            </div>
-            <div className="text-xl font-semibold text-slate-600">Valor Total R$</div>
+          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
+            <DollarSign className="w-16 h-16 mx-auto mb-4 text-green-500" />
+            <h2 className="text-3xl font-bold text-gray-900">
+              {formatCurrency(totals.valor)}
+            </h2>
+            <p className="text-gray-600 mt-2 text-lg">Valor Total</p>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
-            <TrendingUp className="h-20 w-20 text-blue-500 mx-auto mb-6 opacity-75" />
-            <div className="text-4xl font-black text-slate-900 mb-2">
-              {formatCurrency(processed.totals.ticket)} / kg
-            </div>
-            <div className="text-xl font-semibold text-slate-600">Ticket Médio R$/kg</div>
+          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
+            <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-blue-500" />
+            <h2 className="text-3xl font-bold text-gray-900">
+              {totals.ticketMedio.toFixed(2)} R$/kg
+            </h2>
+            <p className="text-gray-600 mt-2 text-lg">Ticket Médio</p>
           </div>
         </div>
 
-        {/* Upload */}
-        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-12 text-center mb-12">
-          <h2 className="text-3xl font-bold text-slate-900 mb-4">Upload de Arquivo Excel</h2>
-          <p className="text-lg text-slate-500 mb-8 max-w-md mx-auto">
-            Arraste ou selecione um arquivo .xlsx com colunas 'Material', 'Peso' e 'Valor'
-          </p>
+        {/* Upload Area */}
+        <div
+          className={`bg-white rounded-3xl shadow-2xl p-12 mb-12 border-2 border-dashed transition-all duration-300 text-center group ${
+            dragActive ? 'border-orange-400 bg-orange-50 shadow-3xl scale-[1.02]' : 'border-gray-300 hover:border-orange-400 hover:shadow-3xl'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <Upload className="w-20 h-20 mx-auto mb-6 text-gray-400 group-hover:text-orange-500 transition-colors duration-300" />
+          <p className="text-xl font-semibold text-gray-700 mb-2">Arraste seu arquivo Excel aqui</p>
+          <p className="text-gray-500 mb-6">ou clique para selecionar</p>
           <input
+            ref={fileInput}
             type="file"
-            accept=".xlsx"
-            onChange={handleFile}
-            className="block w-full text-sm text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-3xl file:border-0 file:text-sm file:font-bold file:bg-gradient-to-r file:from-blue-500 file:to-blue-600 file:text-white hover:file:from-blue-600 hover:file:to-blue-700 mx-auto cursor-pointer transition-all"
+            className="hidden"
+            accept=".xlsx,.xls"
+            onChange={handleFileChange}
           />
+          <button
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-semibold hover:bg-orange-600 transition-colors duration-300"
+          >
+            Selecionar Arquivo
+          </button>
         </div>
 
-        {/* Materiais Accordions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-          {Object.entries(processed.groups).map(([mat, group]) => {
-            const isOpen = openMaterials.has(mat);
-            const groupPeso = group.reduce((sum, r) => sum + r.Peso, 0);
-            const groupValor = group.reduce((sum, r) => sum + r.Valor, 0);
-            const groupTicket = groupPeso > 0 ? groupValor / groupPeso : 0;
-            const colorClass = materialColors[mat as keyof typeof materialColors] || 'bg-gray-500';
-
-            return (
-              <div key={mat} className="relative overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-200">
-                <div className={`absolute inset-y-0 left-0 w-3 ${colorClass} transition-all duration-300`} />
-                <div className="relative p-8">
-                  <div className="flex justify-between items-center mb-6 cursor-pointer" onClick={() => toggleMaterial(mat)}>
-                    <h3 className="text-2xl font-bold text-slate-900 pr-4">{mat}</h3>
+        {/* Materials Accordions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          {Object.entries(materials).map(([mat, stats]) => (
+            materialColors[mat as keyof typeof materialColors] ? (
+              <div key={mat} className="bg-white rounded-3xl shadow-2xl overflow-hidden relative">
+                <div
+                  className={`absolute left-0 top-0 h-full w-4 ${materialColors[mat as keyof typeof materialColors]} z-10`}
+                />
+                <div className="relative pl-4">
+                  <div
+                    className="p-6 cursor-pointer hover:bg-gray-50 transition-colors duration-300 flex justify-between items-center"
+                    onClick={() => toggleMaterial(mat)}
+                  >
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900 capitalize">{mat}</h3>
+                      <p className="text-gray-600">{stats.count} itens</p>
+                    </div>
                     <ChevronDown
-                      className={`h-6 w-6 text-slate-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                      className={`w-8 h-8 text-gray-500 transition-transform duration-300 ${
+                        openMaterials.has(mat) ? 'rotate-180' : ''
+                      }`}
                     />
                   </div>
-                  {isOpen && (
-                    <div>
-                      <div className="grid grid-cols-3 gap-4 mb-8 text-center p-6 bg-gradient-to-r from-slate-50 to-slate-100 rounded-3xl">
+                  {openMaterials.has(mat) && (
+                    <div className="p-6 pt-0 border-t border-gray-100 bg-gray-50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
                         <div>
-                          <div className="text-2xl font-black text-slate-900">{groupPeso.toFixed(2)}</div>
-                          <div className="text-sm text-slate-500 uppercase tracking-wide">KG</div>
+                          <div className="text-2xl font-bold text-gray-900">{stats.peso.toLocaleString('pt-BR')} kg</div>
+                          <p className="text-sm text-gray-600 mt-1">Peso</p>
                         </div>
                         <div>
-                          <div className="text-2xl font-black text-slate-900">{formatCurrency(groupValor)}</div>
-                          <div className="text-sm text-slate-500 uppercase tracking-wide">Valor</div>
+                          <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.valor)}</div>
+                          <p className="text-sm text-gray-600 mt-1">Valor</p>
                         </div>
                         <div>
-                          <div className="text-2xl font-black text-slate-900">{formatCurrency(groupTicket)} / kg</div>
-                          <div className="text-sm text-slate-500 uppercase tracking-wide">Ticket</div>
+                          <div className="text-2xl font-bold text-orange-500">{stats.ticketMedio.toFixed(2)} R$/kg</div>
+                          <p className="text-sm text-gray-600 mt-1">Ticket Médio</p>
+                        </div>
+                        <div>
+                          <div className="text-xl font-semibold text-gray-900">
+                            {totals.valor > 0 ? ((stats.valor / totals.valor) * 100).toFixed(1) : '0'}%
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">do total</p>
                         </div>
                       </div>
-                      <ul className="space-y-3">
-                        {group.map((row, i) => (
-                          <li
-                            key={i}
-                            className="flex justify-between items-center p-4 bg-white/60 backdrop-blur-sm rounded-2xl border border-slate-100 hover:shadow-md transition-all"
-                          >
-                            <span className="font-medium text-slate-700">Peso: {row.Peso.toFixed(2)} kg</span>
-                            <span className="font-bold text-slate-900">{formatCurrency(row.Valor)}</span>
-                          </li>
-                        ))}
-                      </ul>
                     </div>
                   )}
                 </div>
               </div>
-            );
-          })}
+            ) : null
+          ))}
         </div>
 
         {/* Chart */}
-        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8">
-          <h2 className="text-3xl font-bold text-slate-900 mb-8">Gráfico de Materiais</h2>
-          <ResponsiveContainer width="100%" height={450}>
-            <BarChart data={processed.chartData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" fontSize={14} fontWeight={600} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="peso" fill="#3b82f6" name="Peso (kg)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="valor" fill="#10b981" name="Valor (R$)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {chartData.length > 0 && (
+          <div className="bg-white rounded-3xl shadow-2xl p-8">
+            <h2 className="text-3xl font-bold mb-8 text-gray-900 text-center">Peso por Material</h2>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" fontSize={14} fontWeight="bold" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="peso" fill="#f97316" name="Peso (kg)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
+
+export default Dashboard;
