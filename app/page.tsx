@@ -1,263 +1,247 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { Package, DollarSign, TrendingUp, Upload, ChevronDown } from 'lucide-react';
-import { useDropzone } from 'react-dropzone';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Scale, DollarSign, TrendingUp, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
-interface Item {
-  material: string;
+type Row = {
+  Material: string;
+  Peso: number;
+  Valor: number;
+};
+
+type Totals = {
   peso: number;
   valor: number;
-}
+  ticket: number;
+};
 
-const exampleData: Item[] = [
-  { material: 'Aço Inox', peso: 150, valor: 22500 },
-  { material: 'Cobre', peso: 80, valor: 48000 },
-  { material: 'Latão', peso: 120, valor: 21600 },
+type ProcessedData = {
+  groups: Record<string, Row[]>;
+  totals: Totals;
+  chartData: Array<{ name: string; peso: number; valor: number }>;
+};
+
+const exampleData: any[] = [
+  { Material: 'Cobre', Peso: 150.5, Valor: 75250 },
+  { Material: 'Cobre', Peso: 200, Valor: 100000 },
+  { Material: 'Latão', Peso: 80.2, Valor: 32080 },
+  { Material: 'Alumínio', Peso: 300, Valor: 45000 },
+  { Material: 'Inox', Peso: 50, Valor: 12500 },
 ];
 
-const Page: React.FC = () => {
-  const [data, setData] = useState<Item[]>(exampleData);
-  const [expanded, setExpanded] = useState<string[]>(['Cobre']);
+export default function Dashboard() {
+  const [rawData, setRawData] = useState<any[]>([]);
+  const [openMaterials, setOpenMaterials] = useState<Set<string>>(new Set(['Cobre']));
 
-  const materials = useMemo(() => {
-    const grouped: Record<string, { peso: number; valor: number }> = {};
-    data.forEach((item) => {
-      if (!grouped[item.material]) {
-        grouped[item.material] = { peso: 0, valor: 0 };
+  const today = new Date().toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const processed: ProcessedData = useMemo(() => {
+    const groups: Record<string, Row[]> = {};
+    let totalPeso = 0;
+    let totalValor = 0;
+
+    rawData.forEach((row: any) => {
+      const mat = row.Material?.toString() || '';
+      const peso = parseFloat(row.Peso as string) || 0;
+      const valor = parseFloat(row.Valor as string) || 0;
+
+      if (mat) {
+        if (!groups[mat]) groups[mat] = [];
+        groups[mat].push({ Material: mat, Peso: peso, Valor: valor });
+        totalPeso += peso;
+        totalValor += valor;
       }
-      grouped[item.material].peso += item.peso;
-      grouped[item.material].valor += item.valor;
     });
-    return Object.entries(grouped).map(([material, stats]) => ({
-      material,
-      ...stats,
+
+    const ticketMedio = totalPeso > 0 ? totalValor / totalPeso : 0;
+
+    const totals: Totals = { peso: totalPeso, valor: totalValor, ticket: ticketMedio };
+
+    const chartData = Object.entries(groups).map(([name, items]) => ({
+      name,
+      peso: items.reduce((sum, r) => sum + r.Peso, 0),
+      valor: items.reduce((sum, r) => sum + r.Valor, 0),
     }));
-  }, [data]);
 
-  const totalPeso = useMemo(
-    () => materials.reduce((sum, m) => sum + m.peso, 0),
-    [materials]
-  );
-  const totalValor = useMemo(
-    () => materials.reduce((sum, m) => sum + m.valor, 0),
-    [materials]
-  );
-  const ticketMedio = useMemo(
-    () => (totalPeso > 0 ? totalValor / totalPeso : 0),
-    [totalPeso, totalValor]
-  );
+    return { groups, totals, chartData };
+  }, [rawData]);
 
-  const colorMap: Record<string, string> = {
-    'Cobre': 'orange',
-    'Latão': 'yellow',
-    'Alumínio': 'blue',
-    'Aço Inox': 'gray',
+  const toggleMaterial = useCallback((mat: string) => {
+    const newSet = new Set(openMaterials);
+    if (newSet.has(mat)) {
+      newSet.delete(mat);
+    } else {
+      newSet.add(mat);
+    }
+    setOpenMaterials(newSet);
+  }, [openMaterials]);
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result as string;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const json = XLSX.utils.sheet_to_json(ws);
+      setRawData(json as any[]);
+    };
+    reader.readAsBinaryString(file);
   };
 
-  const toggleMaterial = useCallback((material: string) => {
-    setExpanded((prev) => (prev.includes(material)
-      ? prev.filter((m) => m !== material)
-      : [...prev, material]));
+  useEffect(() => {
+    setRawData(exampleData);
   }, []);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const arrayBuffer = (e.target as FileReader)?.result as ArrayBuffer;
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-        const parsedData: Item[] = jsonData.map((row: any) => ({
-          material: String(row.Material || ''),
-          peso: parseFloat(String(row.Peso || 0)) || 0,
-          valor: parseFloat(String(row.Valor || 0)) || 0,
-        })).filter((item) => item.material && item.peso > 0 && item.valor > 0);
-        setData(parsedData);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }, []);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const d = payload[0].payload;
-      return (
-        <div className="bg-white p-4 border rounded-lg shadow-lg min-w-[200px]">
-          <p className="font-bold text-slate-900 mb-2">{d.material}</p>
-          <p className="text-sm">Peso: <span className="font-semibold">{d.peso.toLocaleString()} kg</span></p>
-          <p className="text-sm">Valor: <span className="font-semibold text-green-600">{d.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></p>
-        </div>
-      );
-    }
-    return null;
+  const materialColors: Record<string, string> = {
+    Cobre: 'bg-orange-500',
+    Latão: 'bg-yellow-500',
+    Alumínio: 'bg-gray-400',
+    Inox: 'bg-blue-500',
   };
+
+  const formatCurrency = (value: number) =>
+    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 py-12 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <header className="text-center mb-16">
-          <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-slate-900 via-slate-700 to-slate-500 bg-clip-text text-transparent mb-6 drop-shadow-2xl">
-            Dashboard Executivo
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-4">
+          <h1 className="text-4xl lg:text-5xl font-black text-slate-900">
+            Metalfama | Inteligência de Vendas
           </h1>
-          <p className="text-2xl text-slate-600 font-medium">
-            {new Date().toLocaleDateString('pt-BR', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </p>
-        </header>
+          <p className="text-xl text-slate-500">{today}</p>
+        </div>
 
-        {/* KPIs Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-10 hover:shadow-3xl transition-all duration-300">
-            <Package className="w-20 h-20 text-blue-500 mx-auto mb-6 opacity-80" />
-            <div className="text-4xl lg:text-5xl font-black text-slate-900 mb-3">
-              {totalPeso.toLocaleString('pt-BR')}
+        {/* KPIs */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
+            <Scale className="h-20 w-20 text-emerald-500 mx-auto mb-6 opacity-75" />
+            <div className="text-4xl font-black text-slate-900 mb-2">
+              {processed.totals.peso.toFixed(2)}
             </div>
-            <p className="text-xl text-slate-600 font-semibold">Peso Total (kg)</p>
+            <div className="text-xl font-semibold text-slate-600">Peso Total KG</div>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-10 hover:shadow-3xl transition-all duration-300">
-            <DollarSign className="w-20 h-20 text-emerald-500 mx-auto mb-6 opacity-80" />
-            <div className="text-4xl lg:text-5xl font-black text-slate-900 mb-3">
-              {totalValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
+            <DollarSign className="h-20 w-20 text-amber-500 mx-auto mb-6 opacity-75" />
+            <div className="text-4xl font-black text-slate-900 mb-2">
+              {formatCurrency(processed.totals.valor)}
             </div>
-            <p className="text-xl text-slate-600 font-semibold">Valor Total</p>
+            <div className="text-xl font-semibold text-slate-600">Valor Total R$</div>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-10 hover:shadow-3xl transition-all duration-300">
-            <TrendingUp className="w-20 h-20 text-purple-500 mx-auto mb-6 opacity-80" />
-            <div className="text-4xl lg:text-5xl font-black text-slate-900 mb-3">
-              {ticketMedio.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/kg
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8 text-center">
+            <TrendingUp className="h-20 w-20 text-blue-500 mx-auto mb-6 opacity-75" />
+            <div className="text-4xl font-black text-slate-900 mb-2">
+              {formatCurrency(processed.totals.ticket)} / kg
             </div>
-            <p className="text-xl text-slate-600 font-semibold">Ticket Médio</p>
+            <div className="text-xl font-semibold text-slate-600">Ticket Médio R$/kg</div>
           </div>
         </div>
 
-        {/* Upload Section */}
-        <section className="mb-20">
-          <h2 className="text-4xl font-black text-slate-900 mb-10">Carregar Dados (Excel)</h2>
-          <div
-            {...getRootProps()}
-            className={`relative bg-white rounded-3xl shadow-2xl border-4 border-dashed border-slate-300 p-16 text-center transition-all duration-500 hover:border-blue-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 hover:shadow-3xl cursor-pointer flex flex-col items-center justify-center group ${
-              isDragActive
-                ? 'border-blue-500 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-3xl border-4'
-                : ''
-            }`}
-          >
-            <input {...getInputProps()} className="hidden" />
-            <Upload className="w-24 h-24 text-slate-400 group-hover:text-blue-500 transition-colors mb-8 opacity-75 group-hover:opacity-100" />
-            <h3 className="text-3xl font-black text-slate-900 mb-4 drop-shadow-sm">
-              {isDragActive ? 'Solte o arquivo...' : 'Arraste seu arquivo Excel ou clique aqui'}
-            </h3>
-            <p className="text-xl text-slate-600 max-w-md mx-auto mb-8">
-              Colunas esperadas: <strong>Material</strong>, <strong>Peso</strong> (kg), <strong>Valor</strong> (R$)
-            </p>
-            {data.length > 0 && (
-              <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-emerald-100 text-emerald-800 px-6 py-3 rounded-2xl border border-emerald-200 font-semibold shadow-lg">
-                ✅ {data.length} itens carregados ({materials.length} materiais únicos)
-              </div>
-            )}
-          </div>
-        </section>
+        {/* Upload */}
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-12 text-center mb-12">
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">Upload de Arquivo Excel</h2>
+          <p className="text-lg text-slate-500 mb-8 max-w-md mx-auto">
+            Arraste ou selecione um arquivo .xlsx com colunas 'Material', 'Peso' e 'Valor'
+          </p>
+          <input
+            type="file"
+            accept=".xlsx"
+            onChange={handleFile}
+            className="block w-full text-sm text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-3xl file:border-0 file:text-sm file:font-bold file:bg-gradient-to-r file:from-blue-500 file:to-blue-600 file:text-white hover:file:from-blue-600 hover:file:to-blue-700 mx-auto cursor-pointer transition-all"
+          />
+        </div>
 
-        {/* Materials Accordions */}
-        <section className="mb-20">
-          <h2 className="text-4xl font-black text-slate-900 mb-12">Materiais</h2>
-          <div className="space-y-8">
-            {materials.map((m) => {
-              const color = colorMap[m.material] || 'slate';
-              const isOpen = expanded.includes(m.material);
-              return (
-                <div
-                  key={m.material}
-                  className="group relative bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden hover:shadow-3xl transition-all duration-500"
-                >
-                  {/* Colored Stripe */}
-                  <div
-                    className={`absolute left-0 top-0 bottom-0 w-4 ${color}-500 shadow-lg z-10 transition-all duration-300 group-hover:w-5 opacity-90 group-hover:opacity-100`}
-                    style={{ borderRadius: '1.5rem 0 0 1.5rem' }}
-                  />
-                  <div className="relative pl-16 p-10">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-3xl font-black text-slate-900 drop-shadow-sm">
-                        {m.material}
-                      </h3>
-                      <button
-                        onClick={() => toggleMaterial(m.material)}
-                        className="p-4 rounded-3xl bg-white/80 backdrop-blur-sm hover:bg-slate-100 shadow-lg hover:shadow-xl transition-all duration-300 border border-slate-200 flex items-center justify-center w-16 h-16 group-hover:scale-110"
-                        aria-label={`Expandir ${m.material}`}
-                      >
-                        <ChevronDown
-                          className={`w-8 h-8 text-slate-700 transition-transform duration-300 ${
-                            isOpen ? 'rotate-180' : 'rotate-0'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                    {isOpen && (
-                      <div className="mt-10 pt-8 border-t-2 border-slate-100 bg-gradient-to-r from-slate-50/50 to-white/50 backdrop-blur-sm rounded-3xl p-10 -mx-10 mb-4 shadow-inner">
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 text-center">
-                          <div>
-                            <p className="text-2xl text-slate-600 font-semibold mb-6 tracking-wide">Peso Total</p>
-                            <div className="text-5xl lg:text-6xl font-black text-slate-900 bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent drop-shadow-2xl">
-                              {m.peso.toLocaleString('pt-BR')}
-                            </div>
-                            <p className="text-2xl text-slate-500 mt-4">kg</p>
-                          </div>
-                          <div>
-                            <p className="text-2xl text-slate-600 font-semibold mb-6 tracking-wide">Valor Total</p>
-                            <div className="text-5xl lg:text-6xl font-black bg-gradient-to-r from-emerald-600 to-emerald-400 bg-clip-text text-transparent drop-shadow-2xl">
-                              {m.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </div>
-                          </div>
+        {/* Materiais Accordions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          {Object.entries(processed.groups).map(([mat, group]) => {
+            const isOpen = openMaterials.has(mat);
+            const groupPeso = group.reduce((sum, r) => sum + r.Peso, 0);
+            const groupValor = group.reduce((sum, r) => sum + r.Valor, 0);
+            const groupTicket = groupPeso > 0 ? groupValor / groupPeso : 0;
+            const colorClass = materialColors[mat as keyof typeof materialColors] || 'bg-gray-500';
+
+            return (
+              <div key={mat} className="relative overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-200">
+                <div className={`absolute inset-y-0 left-0 w-3 ${colorClass} transition-all duration-300`} />
+                <div className="relative p-8">
+                  <div className="flex justify-between items-center mb-6 cursor-pointer" onClick={() => toggleMaterial(mat)}>
+                    <h3 className="text-2xl font-bold text-slate-900 pr-4">{mat}</h3>
+                    <ChevronDown
+                      className={`h-6 w-6 text-slate-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                    />
+                  </div>
+                  {isOpen && (
+                    <div>
+                      <div className="grid grid-cols-3 gap-4 mb-8 text-center p-6 bg-gradient-to-r from-slate-50 to-slate-100 rounded-3xl">
+                        <div>
+                          <div className="text-2xl font-black text-slate-900">{groupPeso.toFixed(2)}</div>
+                          <div className="text-sm text-slate-500 uppercase tracking-wide">KG</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-black text-slate-900">{formatCurrency(groupValor)}</div>
+                          <div className="text-sm text-slate-500 uppercase tracking-wide">Valor</div>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-black text-slate-900">{formatCurrency(groupTicket)} / kg</div>
+                          <div className="text-sm text-slate-500 uppercase tracking-wide">Ticket</div>
                         </div>
                       </div>
-                    )}
-                  </div>
+                      <ul className="space-y-3">
+                        {group.map((row, i) => (
+                          <li
+                            key={i}
+                            className="flex justify-between items-center p-4 bg-white/60 backdrop-blur-sm rounded-2xl border border-slate-100 hover:shadow-md transition-all"
+                          >
+                            <span className="font-medium text-slate-700">Peso: {row.Peso.toFixed(2)} kg</span>
+                            <span className="font-bold text-slate-900">{formatCurrency(row.Valor)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        </section>
+              </div>
+            );
+          })}
+        </div>
 
-        {/* Interactive Chart */}
-        <section>
-          <h2 className="text-4xl font-black text-slate-900 mb-12">Distribuição de Peso por Material</h2>
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden hover:shadow-3xl transition-all duration-500">
-            <div className="p-10 pb-8">
-              <ResponsiveContainer width="100%" height={500}>
-                <BarChart data={materials}>
-                  <XAxis
-                    dataKey="material"
-                    angle={-45}
-                    height={100}
-                    tick={{ fontSize: 14, fontWeight: 600, fill: '#64748b' }}
-                  />
-                  <YAxis tick={{ fontSize: 14, fill: '#64748b' }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar
-                    dataKey="peso"
-                    fill="#3b82f6"
-                    name="Peso (kg)"
-                    radius={[10, 10, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </section>
+        {/* Chart */}
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-8">Gráfico de Materiais</h2>
+          <ResponsiveContainer width="100%" height={450}>
+            <BarChart data={processed.chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" fontSize={14} fontWeight={600} />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="peso" fill="#3b82f6" name="Peso (kg)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="valor" fill="#10b981" name="Valor (R$)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
-};
-
-export default Page;
+}
