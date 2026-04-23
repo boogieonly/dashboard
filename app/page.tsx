@@ -1,345 +1,258 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
 
-type DataRow = {
-  material: string;
+type Material = 'Cobre' | 'Latão' | 'Alumínio' | 'Inox';
+
+interface Item {
+  material: Material;
   peso: number;
   valor: number;
-};
+}
 
-type ChartData = {
-  name: string;
-  peso: number;
-  valor: number;
-};
-
-const EXAMPLE_DATA: DataRow[] = [
-  { material: 'Cobre', peso: 150.5, valor: 7525 },
-  { material: 'Cobre', peso: 200, valor: 10000 },
-  { material: 'Cobre', peso: 100, valor: 5000 },
-  { material: 'Latão', peso: 100, valor: 4500 },
-  { material: 'Latão', peso: 50, valor: 2250 },
-  { material: 'Latão', peso: 75, valor: 3375 },
-  { material: 'Alumínio', peso: 300, valor: 3600 },
-  { material: 'Alumínio', peso: 250, valor: 3000 },
-  { material: 'Alumínio', peso: 180, valor: 2160 },
-  { material: 'Inox', peso: 120, valor: 7200 },
-  { material: 'Inox', peso: 80, valor: 4800 },
-  { material: 'Inox', peso: 90, valor: 5400 }
+const initialData: Item[] = [
+  { material: 'Cobre', peso: 150.5, valor: 1204.75 },
+  { material: 'Cobre', peso: 45.2, valor: 362.40 },
+  { material: 'Latão', peso: 80.2, valor: 904.26 },
+  { material: 'Latão', peso: 30.0, valor: 338.10 },
+  { material: 'Alumínio', peso: 200.1, valor: 601.30 },
+  { material: 'Alumínio', peso: 100.5, valor: 301.50 },
+  { material: 'Inox', peso: 50.0, valor: 850.00 },
+  { material: 'Inox', peso: 25.3, valor: 428.55 },
 ];
 
-const TableModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  tableData: DataRow[];
-}> = ({ isOpen, onClose, title, tableData }) => {
-  if (!isOpen) return null;
+const materials: Material[] = ['Cobre', 'Latão', 'Alumínio', 'Inox'];
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="p-8 border-b bg-gradient-to-r from-slate-50 to-blue-50 flex justify-between items-center">
-          <h2 className="text-3xl font-bold text-slate-800">{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-3xl font-bold text-slate-500 hover:text-slate-700 p-2 -m-2 rounded-xl hover:bg-slate-200 transition-all"
-          >
-            ×
-          </button>
-        </div>
-        <div className="overflow-auto flex-1 p-8">
-          <table className="w-full table-auto border-collapse bg-white">
-            <thead>
-              <tr className="bg-gradient-to-r from-slate-50 to-slate-100">
-                <th className="p-6 text-left font-black text-lg text-slate-700 border-r border-slate-200">Material</th>
-                <th className="p-6 text-right font-black text-lg text-slate-700">Peso (kg)</th>
-                <th className="p-6 text-right font-black text-lg text-slate-700">Valor (R$)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.map((row, index) => (
-                <tr key={index} className="border-b border-slate-100 hover:bg-blue-50 transition-colors">
-                  <td className="p-6 font-semibold text-slate-800">{row.material}</td>
-                  <td className="p-6 text-right font-mono text-2xl text-emerald-600">{row.peso.toLocaleString()}</td>
-                  <td className="p-6 text-right font-mono text-2xl text-blue-600">{row.valor.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+const materialColors: Record<Material, string> = {
+  Cobre: 'from-orange-500 to-orange-400',
+  Latão: 'from-yellow-500 to-yellow-400',
+  Alumínio: 'from-blue-400 to-indigo-400',
+  Inox: 'from-gray-400 to-gray-200',
 };
 
-const DashboardComercial: React.FC = () => {
-  const [data, setData] = useState<DataRow[]>(EXAMPLE_DATA);
-  const [totalPeso, setTotalPeso] = useState(0);
-  const [totalValor, setTotalValor] = useState(0);
-  const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [showPesoModal, setShowPesoModal] = useState(false);
-  const [showValorModal, setShowValorModal] = useState(false);
-  const [showMaterialModal, setShowMaterialModal] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState<string>('');
+export default function Page() {
+  const [data, setData] = useState<Item[]>(initialData);
+  const [selectedMaterial, setSelectedMaterial] = useState<Material>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const pesoSortedData = React.useMemo(() => [...data].sort((a, b) => b.peso - a.peso), [data]);
-  const valorSortedData = React.useMemo(() => [...data].sort((a, b) => b.valor - a.valor), [data]);
-  const filteredData = React.useMemo(
-    () => selectedMaterial ? data.filter((d) => d.material === selectedMaterial) : data,
+  const materialTotals = useMemo(() => {
+    const totals: Record<string, { peso: number; valor: number }> = {};
+    for (const item of data) {
+      if (!totals[item.material]) {
+        totals[item.material] = { peso: 0, valor: 0 };
+      }
+      totals[item.material].peso += item.peso;
+      totals[item.material].valor += item.valor;
+    }
+    return totals;
+  }, [data]);
+
+  const totalPeso = useMemo(
+    () => Object.values(materialTotals).reduce((sum, t) => sum + t.peso, 0),
+    [materialTotals]
+  );
+
+  const totalValor = useMemo(
+    () => Object.values(materialTotals).reduce((sum, t) => sum + t.valor, 0),
+    [materialTotals]
+  );
+
+  const maxPeso = useMemo(
+    () => Math.max(...Object.values(materialTotals).map((t) => t.peso), 0) || 1,
+    [materialTotals]
+  );
+
+  const chartData = useMemo(
+    () => materials.map((m) => ({ name: m, peso: materialTotals[m]?.peso || 0 })),
+    [materialTotals]
+  );
+
+  const selectedData = useMemo(
+    () => data.filter((item) => item.material === selectedMaterial),
     [data, selectedMaterial]
   );
 
-  useEffect(() => {
-    const tp = data.reduce((sum, row) => sum + row.peso, 0);
-    const tv = data.reduce((sum, row) => sum + row.valor, 0);
-    setTotalPeso(tp);
-    setTotalValor(tv);
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    const agg: Record<string, { peso: number; valor: number }> = {};
-    data.forEach((row) => {
-      if (!agg[row.material]) {
-        agg[row.material] = { peso: 0, valor: 0 };
-      }
-      agg[row.material].peso += row.peso;
-      agg[row.material].valor += row.valor;
-    });
-    const cd: ChartData[] = Object.entries(agg).map(([name, vals]) => ({
-      name,
-      peso: vals.peso,
-      valor: vals.valor,
-    }));
-    setChartData(cd);
-  }, [data]);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json<any>(worksheet);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const bstr = evt.target?.result as string;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        /* eslint-disable @typescript-eslint/no-explicit-any */
-        const json: any[] = XLSX.utils.sheet_to_json(ws);
-        /* eslint-enable @typescript-eslint/no-explicit-any */
-        const newData: DataRow[] = json
-          .map((row) => ({
-            material: String(row.Material || ''),
-            peso: Number(row.Peso) || 0,
-            valor: Number(row.Valor) || 0,
-          }))
-          .filter((row) => row.material && (row.peso > 0 || row.valor > 0));
-        setData(newData);
-      };
-      reader.readAsBinaryString(selectedFile);
+      const newItems: Item[] = jsonData
+        .map((row: any) => ({
+          material: (row.Material || row.material || '').toString().trim() as Material,
+          peso: parseFloat((row.Peso || row.peso || '0').toString()) || 0,
+          valor: parseFloat((row.Valor || row.valor || '0').toString()) || 0,
+        }))
+        .filter((item: Item) => item.material && materials.includes(item.material as Material) && item.peso > 0);
+
+      setData((prev) => [...prev, ...newItems]);
+    } catch (error) {
+      console.error('Error uploading Excel file:', error);
     }
-  };
 
-  const openMaterialModal = (mat: string) => {
-    setSelectedMaterial(mat);
-    setShowMaterialModal(true);
-  };
-
-  const getMaterialTotals = (material: string) => {
-    const matData = chartData.find((c) => c.name === material);
-    return {
-      peso: matData?.peso || 0,
-      valor: matData?.valor || 0,
-    };
-  };
+    e.target.value = '';
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 md:p-12">
-      <div className="max-w-7xl mx-auto w-full">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900/30 to-slate-900 text-white p-8 lg:p-12 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-950 to-blue-500 text-white py-16 px-8 rounded-b-3xl mb-16 shadow-2xl text-center">
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black drop-shadow-2xl">
-            Dashboard Comercial
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12 gap-6">
+          <h1 className="text-4xl lg:text-5xl font-black bg-gradient-to-r from-white via-blue-100 to-purple-200 bg-clip-text text-transparent drop-shadow-2xl">
+            Metalfama Premium Dashboard
           </h1>
-          <p className="text-2xl mt-4 opacity-90 drop-shadow-lg">Metalfama Premium</p>
-        </div>
-
-        {/* Upload Button */}
-        <div className="flex justify-end mb-12">
-          <label className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-8 py-4 rounded-2xl shadow-2xl hover:scale-105 hover:shadow-3xl transition-all cursor-pointer font-semibold">
-            📁 Carregar Excel
+          <label
+            className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-8 py-4 rounded-2xl shadow-2xl hover:shadow-3xl transition-all duration-300 cursor-pointer font-semibold"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            📁 Upload Excel
             <input
+              ref={fileInputRef}
               type="file"
               accept=".xlsx,.xls"
-              onChange={handleFileUpload}
               className="hidden"
+              onChange={handleFileUpload}
             />
           </label>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-12 md:p-16 text-center cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-slate-900 hover:border-slate-800 hover:shadow-3xl"
-            onClick={() => setShowPesoModal(true)}
-          >
-            <div className="text-7xl mb-6 group-hover:scale-110 transition-transform">📦</div>
-            <h2 className="text-3xl md:text-4xl font-black text-slate-800 mb-4">Total em Peso</h2>
-            <p className="text-5xl md:text-6xl font-black text-slate-900 mb-4">
-              {totalPeso.toLocaleString()}
-            </p>
-            <p className="text-2xl text-slate-600 font-semibold">kg</p>
-            <div className="mt-6 text-lg text-slate-500 group-hover:text-slate-700 transition-colors">
-              Clique para ver detalhes
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-[1.02] text-center">
+            <div className="text-5xl lg:text-6xl font-black text-blue-400 mb-4 drop-shadow-lg">
+              {totalPeso.toFixed(1)}
+            </div>
+            <div className="text-xl font-semibold text-blue-200 mb-4">Total em Peso</div>
+            <div className="inline-flex items-center px-6 py-2 bg-blue-500/30 border border-blue-400/50 rounded-full text-blue-200 font-medium text-sm backdrop-blur-sm">
+              <span className="w-3 h-3 bg-blue-400 rounded-full mr-2"></span>
+              {totalPeso.toFixed(1)} kg
             </div>
           </div>
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-12 md:p-16 text-center cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-emerald-600 hover:border-emerald-500 hover:shadow-3xl"
-            onClick={() => setShowValorModal(true)}
-          >
-            <div className="text-7xl mb-6 group-hover:scale-110 transition-transform">💰</div>
-            <h2 className="text-3xl md:text-4xl font-black text-slate-800 mb-4">Valor Total</h2>
-            <p className="text-5xl md:text-6xl font-black text-slate-900 mb-4">
-              R$ {totalValor.toLocaleString()}
-            </p>
-            <div className="mt-6 text-lg text-slate-500 group-hover:text-slate-700 transition-colors">
-              Clique para ver detalhes
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-[1.02] text-center">
+            <div className="text-5xl lg:text-6xl font-black text-emerald-400 mb-4 drop-shadow-lg">
+              R$ {totalValor.toFixed(2)}
+            </div>
+            <div className="text-xl font-semibold text-emerald-200 mb-4">Valor Total</div>
+            <div className="inline-flex items-center px-6 py-2 bg-emerald-500/30 border border-emerald-400/50 rounded-full text-emerald-200 font-medium text-sm backdrop-blur-sm">
+              <span className="w-3 h-3 bg-emerald-400 rounded-full mr-2"></span>
+              R$ {totalValor.toFixed(2)}
             </div>
           </div>
         </div>
 
-        {/* Materials Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-20">
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-10 cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-orange-500 hover:border-orange-400 hover:shadow-3xl"
-            onClick={() => openMaterialModal('Cobre')}
-          >
-            <h3 className="text-3xl font-black text-orange-600 mb-6 drop-shadow-sm">Cobre</h3>
-            <p className="text-5xl font-black text-slate-900">
-              {getMaterialTotals('Cobre').peso.toLocaleString()}
-            </p>
-            <p className="text-2xl text-slate-600 mt-2 font-semibold">
-              R$ {getMaterialTotals('Cobre').valor.toLocaleString()}
-            </p>
-          </div>
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-10 cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-yellow-500 hover:border-yellow-400 hover:shadow-3xl"
-            onClick={() => openMaterialModal('Latão')}
-          >
-            <h3 className="text-3xl font-black text-yellow-600 mb-6 drop-shadow-sm">Latão</h3>
-            <p className="text-5xl font-black text-slate-900">
-              {getMaterialTotals('Latão').peso.toLocaleString()}
-            </p>
-            <p className="text-2xl text-slate-600 mt-2 font-semibold">
-              R$ {getMaterialTotals('Latão').valor.toLocaleString()}
-            </p>
-          </div>
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-10 cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-gray-500 hover:border-gray-400 hover:shadow-3xl"
-            onClick={() => openMaterialModal('Alumínio')}
-          >
-            <h3 className="text-3xl font-black text-gray-700 mb-6 drop-shadow-sm">Alumínio</h3>
-            <p className="text-5xl font-black text-slate-900">
-              {getMaterialTotals('Alumínio').peso.toLocaleString()}
-            </p>
-            <p className="text-2xl text-slate-600 mt-2 font-semibold">
-              R$ {getMaterialTotals('Alumínio').valor.toLocaleString()}
-            </p>
-          </div>
-          <div
-            className="group bg-white rounded-3xl shadow-2xl p-10 cursor-pointer hover:scale-[1.02] transition-all border-l-[15px] border-indigo-700 hover:border-indigo-600 hover:shadow-3xl"
-            onClick={() => openMaterialModal('Inox')}
-          >
-            <h3 className="text-3xl font-black text-indigo-700 mb-6 drop-shadow-sm">Inox</h3>
-            <p className="text-5xl font-black text-slate-900">
-              {getMaterialTotals('Inox').peso.toLocaleString()}
-            </p>
-            <p className="text-2xl text-slate-600 mt-2 font-semibold">
-              R$ {getMaterialTotals('Inox').valor.toLocaleString()}
-            </p>
-          </div>
+        {/* Material Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+          {materials.map((material) => {
+            const tot = materialTotals[material];
+            return (
+              <div
+                key={material}
+                className="group cursor-pointer bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl hover:shadow-3xl hover:scale-[1.05] hover:bg-white/20 transition-all duration-500 overflow-hidden relative"
+                onClick={() => setSelectedMaterial(material)}
+              >
+                <div className="text-4xl font-black mb-4 drop-shadow-lg">
+                  {tot?.peso.toFixed(1) ?? '0'}
+                </div>
+                <div className="text-2xl font-bold text-white mb-2 drop-shadow-lg">{material}</div>
+                <div className="text-lg text-gray-300 mb-6">R$ {tot?.valor.toFixed(2) ?? '0'}</div>
+                <div className="absolute inset-0 bg-gradient-to-t opacity-0 group-hover:opacity-100 transition-opacity duration-500 from-black/20 to-transparent pointer-events-none"></div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Chart */}
-        <div className="bg-white rounded-3xl shadow-2xl p-12 md:p-16">
-          <h2 className="text-4xl font-black text-center mb-12 text-slate-800 drop-shadow-sm">
-            Análise por Material
+        {/* BarChart */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl">
+          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent drop-shadow-lg">
+            Pesos por Material
           </h2>
-          <ResponsiveContainer width="100%" height={500}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="name"
-                fontSize={16}
-                fontWeight="bold"
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                yAxisId="peso"
-                orientation="left"
-                stroke="#f97316"
-                fontSize={14}
-                tickLine={false}
-              />
-              <YAxis
-                yAxisId="valor"
-                orientation="right"
-                stroke="#10b981"
-                fontSize={14}
-                tickLine={false}
-              />
-              <Tooltip />
-              <Legend />
-              <Bar
-                dataKey="peso"
-                yAxisId="peso"
-                fill="#f97316"
-                name="Peso (kg)"
-                radius={[8, 8, 0, 0]}
-              />
-              <Bar
-                dataKey="valor"
-                yAxisId="valor"
-                fill="#10b981"
-                name="Valor (R$)"
-                radius={[8, 8, 0, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex gap-6 items-end pb-8 h-80 lg:h-96 justify-center">
+            {chartData.map(({ name, peso }) => (
+              <div key={name} className="flex flex-col items-center gap-3 flex-1 max-w-[100px] mx-2">
+                <div
+                  className={`w-16 lg:w-20 bg-gradient-to-t ${materialColors[name as Material]} rounded-t-lg shadow-xl transition-all duration-500 hover:scale-110 mx-auto ${peso === 0 ? 'h-12 opacity-50' : ''}`}
+                  style={{
+                    height: `${Math.max((peso / maxPeso) * 280, 20)}px`,
+                  }}
+                />
+                <div className="text-lg font-bold text-white drop-shadow-md">{peso.toFixed(1)} kg</div>
+                <div className="text-sm font-medium text-gray-300 uppercase tracking-wide">{name}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Modals */}
-      <TableModal
-        isOpen={showPesoModal}
-        onClose={() => setShowPesoModal(false)}
-        title="📦 Total em Peso - Detalhes Completos"
-        tableData={pesoSortedData}
-      />
-      <TableModal
-        isOpen={showValorModal}
-        onClose={() => setShowValorModal(false)}
-        title="💰 Valor Total - Detalhes Completos"
-        tableData={valorSortedData}
-      />
-      <TableModal
-        isOpen={showMaterialModal}
-        onClose={() => setShowMaterialModal(false)}
-        title={`Detalhes Completos - ${selectedMaterial}`}
-        tableData={filteredData}
-      />
+      {/* Modal */}
+      {selectedMaterial && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 z-50"
+          onClick={() => setSelectedMaterial(undefined)}
+        >
+          <div
+            className="bg-white/20 backdrop-blur-2xl border border-white/30 rounded-3xl p-8 lg:p-12 max-w-6xl max-h-[90vh] w-full overflow-y-auto shadow-3xl hover:shadow-4xl transition-all duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-8 pb-6 border-b border-white/20">
+              <h2 className="text-3xl lg:text-4xl font-black bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent drop-shadow-2xl">
+                {selectedMaterial} - Detalhes
+              </h2>
+              <button
+                onClick={() => setSelectedMaterial(undefined)}
+                className="text-3xl hover:text-red-400 transition-colors p-2 rounded-xl hover:bg-white/20"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm lg:text-base border-collapse">
+                <thead>
+                  <tr className="bg-white/10 backdrop-blur-sm border-b border-white/30">
+                    <th className="p-4 text-left font-bold rounded-l-xl">Material</th>
+                    <th className="p-4 text-left font-bold">Peso (kg)</th>
+                    <th className="p-4 text-left font-bold rounded-r-xl">Valor (R$)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedData.length > 0 ? (
+                    selectedData.map((item, index) => (
+                      <tr
+                        key={index}
+                        className="hover:bg-white/20 transition-all duration-200 border-b border-white/10 last:border-b-0"
+                      >
+                        <td className="p-4 font-semibold text-white/90">{item.material}</td>
+                        <td className="p-4 font-mono text-blue-300">{item.peso.toFixed(1)}</td>
+                        <td className="p-4 font-mono text-emerald-300">R$ {item.valor.toFixed(2)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="p-12 text-center text-gray-400 font-medium">
+                        Nenhum registro encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-8 pt-8 border-t border-white/20 text-center space-y-2">
+              <div className="text-2xl font-bold text-blue-400">
+                Total Peso: {materialTotals[selectedMaterial]?.peso.toFixed(1) ?? '0'} kg
+              </div>
+              <div className="text-2xl font-bold text-emerald-400">
+                Total Valor: R$ {materialTotals[selectedMaterial]?.valor.toFixed(2) ?? '0'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default DashboardComercial;
+}
