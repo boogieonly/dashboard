@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
-import FechamentoMensal from './components/FechamentoMensal';
+import FechamentoMensal from './componentes/FechamentoMensal';
 
 type Row = {
   data: string;
