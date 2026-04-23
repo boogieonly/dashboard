@@ -1,558 +1,534 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
-type FormDataType = {
-  produto: string;
-  regiao: string;
-  vendedor: string;
-  material: string;
-  volume: string;
-  valor: string;
-};
-
-type Sale = {
+type Transaction = {
   id: string;
+  date: string; // YYYY-MM-DD
+  description: string;
+  region: string;
+  product: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  seller: string;
+  createdAt: string;
+};
+
+type FormData = {
+  description: string;
+  region: string;
+  product: string;
+  quantity: number;
+  unitPrice: number;
+  seller: string;
+};
+
+type DailyData = {
   date: string;
-  produto: string;
-  regiao: string;
-  vendedor: string;
-  material: string;
-  volume: number;
-  valor: number;
+  value: number;
 };
 
-const glassInput = "w-full p-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 transition-all duration-300 text-lg shadow-xl";
-const glassCard = "bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 hover:shadow-3xl transition-all duration-300";
-const glassTable = "bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl overflow-hidden";
+type ProductData = {
+  product: string;
+  value: number;
+};
 
-const KpiCard = ({
-  title,
-  value,
-  gradientClass,
-  icon
-}: {
-  title: string;
-  value: string;
-  gradientClass: string;
-  icon: string;
-}) => (
-  <div className={`${glassCard} text-center group hover:scale-[1.02]`}>
-    <span className="text-4xl mb-4 block select-none">{icon}</span>
-    <h3 className={`text-3xl font-black ${gradientClass} bg-gradient-to-r bg-clip-text text-transparent mb-2 drop-shadow-lg`}>
-      {value}
-    </h3>
-    <p className="text-gray-400 text-sm uppercase tracking-wide font-medium">
-      {title}
-    </p>
-  </div>
-);
+const regions = ['SP', 'MG', 'RJ', 'BA', 'RS'] as const;
+const products = ['Aço Inox', 'Cobre', 'Latão', 'Alumínio', 'Ligas Especiais'] as const;
 
-const LineChart = ({ data }: { data: { date: string; valor: number }[] }) => {
-  if (data.length === 0) return <div className="h-64 flex items-center justify-center text-gray-400">Sem dados</div>;
+const STORAGE_KEY = 'dailyTransactions';
 
-  const maxVal = Math.max(...data.map((d) => d.valor));
-  const step = 400 / (data.length - 1);
-  const points = data
-    .map((d, i) => {
-      const x = i * step;
-      const y = 200 - (d.valor / maxVal) * 180;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-
-  return (
-    <div className="h-64 flex flex-col">
-      <svg viewBox="0 0 400 200" className="flex-1 w-full">
-        <defs>
-          <linearGradient id="lineGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-            <stop offset="0%" stopColor="rgba(34, 211, 238, 0.4)" />
-            <stop offset="100%" stopColor="rgba(34, 211, 238, 0)" />
-          </linearGradient>
-        </defs>
-        <path
-          d={`M 0 200 L ${points} L 400 200 Z`}
-          fill="url(#lineGrad)"
-          stroke="#22d3ee"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {data.map((d, i) => {
-          const x = i * step;
-          const y = 200 - (d.valor / maxVal) * 180;
-          return (
-            <circle key={i} cx={x} cy={y} r="5" fill="#22d3ee" stroke="white" strokeWidth="1" />
-          );
-        })}
-      </svg>
-      <div className="grid grid-cols-7 gap-1 px-4 py-2 text-xs text-gray-400 font-mono">
-        {data.map((d) => (
-          <span key={d.date}>{d.date.slice(5, 10)}</span>
-        ))}
-      </div>
-    </div>
+const DiarioPage: React.FC = () => {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
   );
-};
-
-const BarChart = ({ data }: { data: { material: string; volume: number }[] }) => {
-  if (data.length === 0) return <div className="h-64 flex items-center justify-center text-gray-400">Sem dados</div>;
-
-  const maxVol = Math.max(...data.map((d) => d.volume));
-
-  return (
-    <div className="h-64 flex flex-col">
-      <div className="flex-1 flex gap-3 p-6">
-        {data.map((d, i) => (
-          <div key={i} className="flex-1 flex flex-col items-center gap-2">
-            <div
-              className="w-full bg-gradient-to-t from-orange-400 via-amber-400 to-orange-500 rounded-2xl shadow-lg transition-all duration-500 origin-bottom"
-              style={{ height: `${Math.max((d.volume / maxVol) * 180, 10)}px` }}
-            />
-            <span className="text-xs text-gray-300 font-mono text-center min-h-[2rem] flex items-center">
-              {d.material.length > 12 ? d.material.slice(0, 12) + '...' : d.material}
-            </span>
-            <span className="text-xs text-orange-400 font-bold">
-              {d.volume.toFixed(1)}kg
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-export default function DiarioPage() {
-  const router = useRouter();
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [formData, setFormData] = useState<FormDataType>({
-    produto: '',
-    regiao: '',
-    vendedor: '',
-    material: '',
-    volume: '0',
-    valor: '0',
+  const [formData, setFormData] = useState<FormData>({
+    description: '',
+    region: 'SP',
+    product: 'Aço Inox',
+    quantity: 0,
+    unitPrice: 0,
+    seller: '',
   });
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [feedback, setFeedback] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [message, setMessage] = useState<string>('');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [loading, setLoading] = useState<boolean>(false);
+  const itemsPerPage = 10;
 
+  // Load from localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('dailySales');
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setSales(JSON.parse(stored));
+        setTransactions(JSON.parse(stored));
       }
+    } catch (error) {
+      console.error('Error loading transactions:', error);
     }
   }, []);
 
+  // Auto-save to localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('dailySales', JSON.stringify(sales));
+    if (transactions.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
     }
-  }, [sales]);
+  }, [transactions]);
 
-  const dailySales = sales.filter((s) => s.date === selectedDate);
-  const totalValor = dailySales.reduce((sum, s) => sum + s.valor, 0);
-  const totalVolume = dailySales.reduce((sum, s) => sum + s.volume, 0);
-  const qtd = dailySales.length;
-  const ticketMedio = qtd > 0 ? totalValor / qtd : 0;
-  const maiorVenda = Math.max(...dailySales.map((s) => s.valor), 0);
+  const selectedDateTransactions = useMemo(() =>
+    transactions.filter((t) => t.date === selectedDate),
+    [transactions, selectedDate]
+  );
 
-  const today = new Date();
-  const last7Days: { date: string; valor: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const dayTotal = sales.filter((s) => s.date === dateStr).reduce((sum, s) => sum + s.valor, 0);
-    last7Days.push({ date: dateStr, valor: dayTotal });
-  }
+  const todayFormatted = new Date(selectedDate).toLocaleDateString('pt-BR');
 
-  const thirtyDaysAgo = new Date(today);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const recentSales = sales.filter((s) => new Date(s.date) >= thirtyDaysAgo);
-  const matVolumes: Record<string, number> = {};
-  recentSales.forEach((s) => {
-    matVolumes[s.material] = (matVolumes[s.material] || 0) + s.volume;
-  });
-  const topMats = Object.entries(matVolumes)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5)
-    .map(([material, volume]) => ({ material, volume }));
+  // KPIs for selected date
+  const kpis = useMemo(() => {
+    const data = selectedDateTransactions;
+    const totalWeight = data.reduce((sum, t) => sum + t.quantity, 0);
+    const totalValue = data.reduce((sum, t) => sum + t.total, 0);
+    const totalSales = data.length;
+    const avgTicket = totalSales > 0 ? totalValue / totalSales : 0;
+    const bestProduct = data.reduce((best, t) =>
+      t.total > (best.total || 0) ? t : best
+    );
 
-  const tableSales = sales
-    .filter((s) => new Date(s.date) >= thirtyDaysAgo)
-    .sort((a, b) => {
-      const timeA = new Date(a.date).getTime();
-      const timeB = new Date(b.date).getTime();
-      return sortDir === 'desc' ? timeB - timeA : timeA - timeB;
+    return {
+      totalWeight: totalWeight.toFixed(2),
+      totalValue: totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      totalSales,
+      avgTicket: avgTicket.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+      bestProduct: bestProduct.product || 'Nenhum',
+    };
+  }, [selectedDateTransactions]);
+
+  // Last 7 days data
+  const last7Days = useMemo(() => {
+    const today = new Date();
+    const dates: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      dates.push(date.toISOString().split('T')[0]);
+    }
+
+    return dates.map((date): DailyData => {
+      const dayData = transactions.filter((t) => t.date === date);
+      const value = dayData.reduce((sum, t) => sum + t.total, 0);
+      return {
+        date: new Date(date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+        value,
+      };
     });
-  const pageSize = 10;
-  const totalPages = Math.ceil(tableSales.length / pageSize);
-  const paginatedSales = tableSales.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [transactions]);
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Top 5 products last 7 days
+  const top5Products = useMemo(() => {
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+
+    const productTotals = transactions
+      .filter((t) => new Date(t.date) >= sevenDaysAgo)
+      .reduce((acc: Record<string, number>, t) => {
+        acc[t.product] = (acc[t.product] || 0) + t.total;
+        return acc;
+      }, {});
+
+    return Object.entries(productTotals)
+      .map(([product, value]): ProductData => ({ product, value: value as number }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [transactions]);
+
+  // Last 30 days transactions for table
+  const last30Transactions = useMemo(() => {
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+
+    return transactions
+      .filter((t) => new Date(t.date) >= thirtyDaysAgo)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [transactions]);
+
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return last30Transactions.slice(start, start + itemsPerPage);
+  }, [last30Transactions, currentPage]);
+
+  const totalPages = Math.ceil(last30Transactions.length / itemsPerPage);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name.includes('quantity') || name.includes('unitPrice') ? Number(value) || 0 : value,
+    }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validateForm = (): boolean => {
+    if (!formData.description.trim() || !formData.seller.trim()) {
+      setMessage('❌ Descrição e Vendedor são obrigatórios!');
+      return false;
+    }
+    if (formData.quantity <= 0 || formData.unitPrice <= 0) {
+      setMessage('❌ Quantidade e Valor Unitário devem ser positivos!');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numVolume = Number(formData.volume);
-    const numValor = Number(formData.valor);
-    const required = ['produto', 'regiao', 'vendedor', 'material'];
-    if (
-      required.some((f) => !formData[f].trim()) ||
-      numVolume <= 0 ||
-      numValor <= 0 ||
-      isNaN(numVolume) ||
-      isNaN(numValor)
-    ) {
-      setFeedback('Preencha todos os campos obrigatórios corretamente (valores > 0).');
-      setTimeout(() => setFeedback(''), 5000);
+    if (!validateForm()) {
+      setTimeout(() => setMessage(''), 3000);
       return;
     }
 
-    const newSale: Sale = {
-      id: crypto.randomUUID(),
+    setLoading(true);
+    const total = formData.quantity * formData.unitPrice;
+    const newTransaction: Transaction = {
+      id: Date.now().toString(),
       date: selectedDate,
-      produto: formData.produto.trim(),
-      regiao: formData.regiao.trim(),
-      vendedor: formData.vendedor.trim(),
-      material: formData.material.trim(),
-      volume: numVolume,
-      valor: numValor,
+      ...formData,
+      total,
+      createdAt: new Date().toISOString(),
     };
-    setSales((prev) => [...prev, newSale]);
-    setFormData({ produto: '', regiao: '', vendedor: '', material: '', volume: '0', valor: '0' });
-    setFeedback('Venda registrada com sucesso!');
-    setTimeout(() => setFeedback(''), 3000);
+
+    setTransactions((prev) => [newTransaction, ...prev]);
+    setFormData({
+      description: '',
+      region: 'SP',
+      product: 'Aço Inox',
+      quantity: 0,
+      unitPrice: 0,
+      seller: '',
+    });
+    setMessage('✅ Venda registrada com sucesso!');
+    setTimeout(() => setMessage(''), 3000);
+    setLoading(false);
   };
 
   const handleDelete = (id: string) => {
-    if (!confirm('Confirma a exclusão desta venda?')) return;
-    setSales((prev) => prev.filter((s) => s.id !== id));
-    if (currentPage > Math.ceil((tableSales.length - 1) / pageSize)) {
-      setCurrentPage(Math.max(1, totalPages - 1));
+    if (window.confirm('❓ Confirmar exclusão desta venda?')) {
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      setMessage('🗑️ Venda excluída!');
+      setTimeout(() => setMessage(''), 2000);
     }
-    setFeedback('Venda deletada com sucesso!');
-    setTimeout(() => setFeedback(''), 3000);
   };
 
-  const toggleSort = () => {
-    setSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
-    setCurrentPage(1);
-  };
+  const exportCSV = useCallback((txns: Transaction[], filename: string) => {
+    if (txns.length === 0) {
+      setMessage('❌ Sem dados para exportar!');
+      setTimeout(() => setMessage(''), 2000);
+      return;
+    }
 
-  const exportCSV = () => {
-    const headers = ['Data', 'Produto', 'Região', 'Vendedor', 'Material', 'Volume (kg)', 'Valor (R$)'];
-    const csvContent = [
-      headers.join(','),
-      ...tableSales.map(
-        (s) =>
-          [
-            s.date,
-            s.produto,
-            s.regiao,
-            s.vendedor,
-            s.material,
-            s.volume.toFixed(2),
-            s.valor.toFixed(2),
-          ].join(','),
-      ),
-    ].join('\n');
+    const headers = 'Data,Descrição,Região,Produto,Quantidade(kg),Valor Unit.(R$),Total(R$),Vendedor\n';
+    const csv = headers + txns
+      .map(
+        (t) =>
+          `${t.date},${t.description},${t.region},${t.product},${t.quantity},${t.unitPrice.toFixed(2)},${t.total.toFixed(2)},${t.seller}`
+      )
+      .join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `vendas_ultimos_30_dias_${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
     link.click();
-    document.body.removeChild(link);
-  };
+    setMessage('📥 CSV exportado!');
+    setTimeout(() => setMessage(''), 2000);
+  }, []);
+
+  const handleExportDay = () => exportCSV(selectedDateTransactions, `vendas_${selectedDate}.csv`);
+  const handleExport30Days = () => exportCSV(last30Transactions, 'vendas_ultimos30dias.csv');
+
+  const nextPage = () => currentPage < totalPages && setCurrentPage(currentPage + 1);
+  const prevPage = () => currentPage > 1 && setCurrentPage(currentPage - 1);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-900/30 to-gray-900 p-4 sm:p-8 lg:p-12 text-gray-100 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-4 md:p-6 lg:p-8 text-white">
       {/* Header */}
-      <div className="text-center mb-12 max-w-4xl mx-auto">
-        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent mb-6 drop-shadow-2xl leading-tight">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
           Fechamento Diário
         </h1>
-        <p className="text-lg sm:text-xl md:text-2xl text-gray-300/90 max-w-2xl mx-auto leading-relaxed backdrop-blur-sm">
-          Registre e Acompanhe as Vendas do Dia
-        </p>
+        <p className="text-xl md:text-2xl opacity-90">Registre e acompanhe as vendas do dia</p>
+        <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+          />
+          <p className="text-2xl font-semibold">📅 {todayFormatted}</p>
+        </div>
       </div>
 
-      {/* Feedback */}
-      {feedback && (
-        <div
-          className={`mx-auto mb-8 max-w-2xl p-6 rounded-3xl text-white font-semibold shadow-2xl transform transition-all duration-300 ${
-            feedback.includes('sucesso') || feedback.includes('registrada') || feedback.includes('deletada')
-              ? 'bg-emerald-500/20 border-2 border-emerald-400/40'
-              : 'bg-red-500/20 border-2 border-red-400/40'
-          }`}
-        >
-          {feedback}
+      {/* Message */}
+      {message && (
+        <div className="fixed top-4 right-4 z-50 bg-white/20 backdrop-blur-xl border border-white/30 rounded-xl px-6 py-4 shadow-2xl animate-pulse">
+          {message}
         </div>
       )}
 
-      {/* Date Selector + Form + KPIs */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-        {/* Form */}
-        <div className={`${glassCard} col-span-1`}>
-          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent drop-shadow-lg">
-            Registrar Nova Venda
-          </h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Data *</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className={glassInput}
-                max={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Produto *</label>
-              <input
-                name="produto"
-                placeholder="Nome do produto"
-                value={formData.produto}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Região *</label>
-              <input
-                name="regiao"
-                placeholder="Região de venda"
-                value={formData.regiao}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Vendedor *</label>
-              <input
-                name="vendedor"
-                placeholder="Nome do vendedor"
-                value={formData.vendedor}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Material *</label>
-              <input
-                name="material"
-                placeholder="Tipo de material"
-                value={formData.material}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Volume (kg) *</label>
-              <input
-                name="volume"
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                value={formData.volume}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Valor (R$) *</label>
-              <input
-                name="valor"
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                value={formData.valor}
-                onChange={handleFormChange}
-                className={glassInput}
-                required
-              />
-            </div>
+      {/* Form */}
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <input
+              name="description"
+              placeholder="Descrição"
+              value={formData.description}
+              onChange={handleInputChange}
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 placeholder-white/70 focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+              required
+            />
+            <select
+              name="region"
+              value={formData.region}
+              onChange={handleInputChange}
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+            >
+              {regions.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <select
+              name="product"
+              value={formData.product}
+              onChange={handleInputChange}
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+            >
+              {products.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <input
+              name="quantity"
+              type="number"
+              placeholder="Quantidade (kg)"
+              value={formData.quantity}
+              onChange={handleInputChange}
+              min="0"
+              step="0.01"
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 placeholder-white/70 focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+              required
+            />
+            <input
+              name="unitPrice"
+              type="number"
+              placeholder="Valor Unit. (R$)"
+              value={formData.unitPrice}
+              onChange={handleInputChange}
+              min="0"
+              step="0.01"
+              className="bg-white/10 border border-white/20 rounded-xl px-4 py-3 placeholder-white/70 focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+              required
+            />
+            <input
+              name="seller"
+              placeholder="Vendedor"
+              value={formData.seller}
+              onChange={handleInputChange}
+              className="md:col-span-2 lg:col-span-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 placeholder-white/70 focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all duration-300"
+              required
+            />
             <button
               type="submit"
-              className="md:col-span-2 mt-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 hover:from-cyan-400 hover:via-blue-400 hover:to-indigo-400 text-white font-bold py-4 px-8 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 text-xl backdrop-blur-sm border border-cyan-400/30 hover:scale-[1.02]"
+              disabled={loading}
+              className="md:col-span-2 lg:col-span-1 bg-gradient-to-r from-green-400 to-green-600 hover:from-green-500 hover:to-green-700 hover:scale-105 rounded-xl px-8 py-3 font-bold shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-green-400/50"
             >
-              Registrar Venda
+              {loading ? 'Salvando...' : '✅ Registrar Venda'}
             </button>
           </form>
         </div>
+      </div>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 col-span-1 lg:col-span-1">
-          <KpiCard
-            title="Total de Vendas"
-            value={`R$ ${totalValor.toLocaleString('pt-BR')}`}
-            gradientClass="from-cyan-400 to-blue-500"
-            icon="💰"
-          />
-          <KpiCard
-            title="Volume Total"
-            value={`${totalVolume.toFixed(1)} kg`}
-            gradientClass="from-emerald-400 to-teal-500"
-            icon="📦"
-          />
-          <KpiCard
-            title="Quantidade"
-            value={qtd.toString()}
-            gradientClass="from-orange-400 to-amber-500"
-            icon="🛒"
-          />
-          <KpiCard
-            title="Ticket Médio"
-            value={`R$ ${ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            gradientClass="from-violet-400 to-purple-500"
-            icon="💳"
-          />
-          <KpiCard
-            title="Maior Venda"
-            value={`R$ ${maiorVenda.toLocaleString('pt-BR')}`}
-            gradientClass="from-rose-400 to-pink-500"
-            icon="🏆"
-          />
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8 max-w-7xl mx-auto">
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 hover:scale-105 hover:bg-white/15 shadow-2xl transition-all duration-300 cursor-default">
+          <p className="text-blue-300 text-sm opacity-80">📦 Peso Registrado Hoje</p>
+          <p className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">{kpis.totalWeight} kg</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 hover:scale-105 hover:bg-white/15 shadow-2xl transition-all duration-300 cursor-default">
+          <p className="text-emerald-300 text-sm opacity-80">💰 Valor Registrado Hoje</p>
+          <p className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">{kpis.totalValue}</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 hover:scale-105 hover:bg-white/15 shadow-2xl transition-all duration-300 cursor-default">
+          <p className="text-purple-300 text-sm opacity-80">📋 Total de Vendas Hoje</p>
+          <p className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent">{kpis.totalSales}</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 hover:scale-105 hover:bg-white/15 shadow-2xl transition-all duration-300 cursor-default">
+          <p className="text-pink-300 text-sm opacity-80">💳 Ticket Médio Hoje</p>
+          <p className="text-3xl font-bold bg-gradient-to-r from-pink-400 to-pink-600 bg-clip-text text-transparent">{kpis.avgTicket}</p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 hover:scale-105 hover:bg-white/15 shadow-2xl transition-all duration-300 cursor-default">
+          <p className="text-yellow-300 text-sm opacity-80">⭐ Melhor Produto Hoje</p>
+          <p className="text-2xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">{kpis.bestProduct}</p>
         </div>
       </div>
 
-      {/* Graphs */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-        <div className={`${glassCard}`}>
-          <h3 className="text-2xl font-bold mb-6 text-cyan-400 drop-shadow-lg">Últimas 7 Dias - Total Vendas (R$)</h3>
-          <LineChart data={last7Days} />
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 max-w-7xl mx-auto">
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 h-[350px]">
+          <h3 className="text-2xl font-bold mb-4 text-center">📈 Receita Últimos 7 Dias</h3>
+          {last7Days.some((d) => d.value > 0) ? (
+            <div className="h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={last7Days}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="white/20" />
+                  <XAxis dataKey="date" stroke="white" />
+                  <YAxis stroke="white" tickFormatter={(v) => `R$ ${v.toLocaleString()}`} />
+                  <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString()}`, 'Receita']} />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="url(#lineGradient)"
+                    strokeWidth={3}
+                    dot={{ fill: 'white', strokeWidth: 2 }}
+                  />
+                  <defs>
+                    <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor="#3B82F6" />
+                      <stop offset="100%" stopColor="#8B5CF6" />
+                    </linearGradient>
+                  </defs>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-xl opacity-50">📊 Sem dados para exibir</div>
+          )}
         </div>
-        <div className={`${glassCard}`}>
-          <h3 className="text-2xl font-bold mb-6 text-orange-400 drop-shadow-lg">Top 5 Materiais - Volume (kg)</h3>
-          <BarChart data={topMats} />
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 h-[350px]">
+          <h3 className="text-2xl font-bold mb-4 text-center">📊 Top 5 Materiais (Últimos 7 Dias)</h3>
+          {top5Products.some((p) => p.value > 0) ? (
+            <div className="h-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={top5Products}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="white/20" />
+                  <XAxis dataKey="product" stroke="white" angle={-45} textAnchor="end" height={80} />
+                  <YAxis stroke="white" tickFormatter={(v) => `R$ ${v.toLocaleString()}`} />
+                  <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString()}`, 'Valor']} />
+                  <Bar dataKey="value" fill="url(#barGradient)" />
+                  <defs>
+                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#A855F7" />
+                      <stop offset="100%" stopColor="#EC4899" />
+                    </linearGradient>
+                  </defs>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-xl opacity-50">📊 Sem dados para exibir</div>
+          )}
         </div>
-      </div>
-
-      {/* Table */}
-      <div className="mb-12">
-        <div className={`${glassTable} max-h-[600px] overflow-auto`}>
-          <table className="w-full table-auto">
-            <thead>
-              <tr className="border-b border-white/10">
-                <th
-                  className="sticky top-0 z-20 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100 cursor-pointer hover:bg-white/30 transition-all pr-2"
-                  onClick={toggleSort}
-                >
-                  Data {sortDir === 'desc' ? '↓' : '↑'}
-                </th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Produto</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Região</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Vendedor</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Material</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Volume (kg)</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Valor (R$)</th>
-                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100 w-32">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedSales.map((sale) => (
-                <tr key={sale.id} className="border-b border-white/5 hover:bg-white/10 transition-all">
-                  <td className="px-6 py-4 font-medium text-gray-200">
-                    {new Date(sale.date).toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-4 text-gray-300 max-w-[12rem] truncate">{sale.produto}</td>
-                  <td className="px-6 py-4 text-gray-300">{sale.regiao}</td>
-                  <td className="px-6 py-4 text-gray-300">{sale.vendedor}</td>
-                  <td className="px-6 py-4 text-gray-300">{sale.material}</td>
-                  <td className="px-6 py-4 text-emerald-400 font-mono">{sale.volume.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-cyan-400 font-mono">R$ {sale.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                  <td className="px-6 py-4">
-                    <button
-                      onClick={() => handleDelete(sale.id)}
-                      className="bg-red-500/90 hover:bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm border border-red-400/30"
-                    >
-                      Deletar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {paginatedSales.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500 font-medium">
-                    Nenhuma venda nos últimos 30 dias.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex flex-wrap justify-center items-center gap-2 mt-8">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
-              className="px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl text-gray-300 hover:bg-white/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all disabled:hover:bg-transparent"
-            >
-              Anterior
-            </button>
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-              const pageNum = currentPage > 3 ? currentPage - 3 + i : i + 1;
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setCurrentPage(pageNum)}
-                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
-                    currentPage === pageNum
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-xl'
-                      : 'bg-white/10 backdrop-blur-xl border border-white/20 text-gray-300 hover:bg-white/20 hover:text-white'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
-              className="px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl text-gray-300 hover:bg-white/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all disabled:hover:bg-transparent"
-            >
-              Próxima
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-6 justify-center pt-12 pb-12">
+      <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
         <button
-          onClick={exportCSV}
-          className="flex-1 max-w-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-bold py-4 px-8 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 text-lg backdrop-blur-sm border border-emerald-400/30 hover:scale-[1.02]"
+          onClick={handleExportDay}
+          disabled={selectedDateTransactions.length === 0}
+          className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed px-8 py-4 rounded-xl font-bold shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-400/50"
         >
-          📊 Exportar Últimas 30 Dias (CSV)
+          📥 Exportar CSV do Dia ({selectedDateTransactions.length})
         </button>
         <button
-          onClick={() => router.back()}
-          className="flex-1 max-w-sm bg-gradient-to-r from-slate-600 to-gray-700 hover:from-slate-500 hover:to-gray-600 text-white font-bold py-4 px-8 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 text-lg backdrop-blur-sm border border-slate-400/30 hover:scale-[1.02]"
+          onClick={handleExport30Days}
+          disabled={last30Transactions.length === 0}
+          className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed px-8 py-4 rounded-xl font-bold shadow-xl transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-purple-400/50"
         >
-          ← Voltar para Visão Geral
+          📊 Exportar Últimos 30 Dias ({last30Transactions.length})
         </button>
       </div>
+
+      {/* Table */}
+      {last30Transactions.length > 0 && (
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 overflow-x-auto">
+            <h3 className="text-3xl font-bold mb-6 text-center">📋 Histórico Últimos 30 Dias</h3>
+            <table className="w-full text-left text-sm md:text-base">
+              <thead>
+                <tr className="border-b border-white/20">
+                  <th className="p-4">Data</th>
+                  <th className="p-4">Descrição</th>
+                  <th className="p-4">Região</th>
+                  <th className="p-4">Produto</th>
+                  <th className="p-4">Qtd (kg)</th>
+                  <th className="p-4">Valor Unit.</th>
+                  <th className="p-4">Total (R$)</th>
+                  <th className="p-4">Vendedor</th>
+                  <th className="p-4">Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedTransactions.map((t) => (
+                  <tr
+                    key={t.id}
+                    className={`hover:bg-white/15 transition-all duration-300 border-b border-white/10 ${
+                      t.date === selectedDate
+                        ? 'bg-white/20 border-blue-400/50'
+                        : ''
+                    }`}
+                  >
+                    <td className="p-4 font-semibold">{new Date(t.date).toLocaleDateString('pt-BR')}</td>
+                    <td className="p-4">{t.description}</td>
+                    <td className="p-4">{t.region}</td>
+                    <td className="p-4">{t.product}</td>
+                    <td className="p-4">{t.quantity.toFixed(2)}</td>
+                    <td className="p-4">R$ {t.unitPrice.toFixed(2)}</td>
+                    <td className="p-4 font-bold text-emerald-400">R$ {t.total.toFixed(2)}</td>
+                    <td className="p-4">{t.seller}</td>
+                    <td className="p-4">
+                      <button
+                        onClick={() => handleDelete(t.id)}
+                        className="text-2xl hover:scale-125 hover:text-red-400 transition-all duration-300"
+                      >
+                        ❌
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalPages > 1 && (
+              <div className="flex justify-center gap-4 mt-8">
+                <button
+                  onClick={prevPage}
+                  disabled={currentPage === 1}
+                  className="px-6 py-2 bg-white/20 rounded-xl hover:bg-white/30 disabled:opacity-50 transition-all duration-300"
+                >
+                  ← Anterior
+                </button>
+                <span>
+                  Página {currentPage} de {totalPages}
+                </span>
+                <button
+                  onClick={nextPage}
+                  disabled={currentPage === totalPages}
+                  className="px-6 py-2 bg-white/20 rounded-xl hover:bg-white/30 disabled:opacity-50 transition-all duration-300"
+                >
+                  Próxima →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {last30Transactions.length === 0 && (
+        <div className="text-center py-20 opacity-50">
+          📭 Nenhum registro nos últimos 30 dias. Registre a primeira venda!
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default DiarioPage;
