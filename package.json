@@ -1,5 +1,5 @@
 {
-  "name": "Metalfama",
+  "name": "dashboard-metalfama",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,23 +9,25 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "lasted",
+    "next": "15.1.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "lucide-react": "^0.441.0",
     "recharts": "^2.12.7",
     "xlsx": "^0.18.5",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.2",
+    "tailwind-merge": "2.5.2",
     "react-dropzone": "^14.2.3"
   },
   "devDependencies": {
-    "typescript": "^5.5.3",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@types/node": "^20.14.2",
-    "tailwindcss": "^3.4.4",
-    "postcss": "^8.4.38",
-    "autoprefixer": "^10.4.18"
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.9.0",
+    "eslint-config-next": "15.1.8",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.13",
+    "typescript": "~5.6.3"
   }
 }
