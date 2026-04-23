@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   ResponsiveContainer,
@@ -65,8 +67,6 @@ const rawData: SalesData[] = [
   { id: 24, date: '2024-06-07', region: 'Bahia', product: 'Estrutura Metálica', seller: 'Pedro Costa', client: 'Recôncavo Steel', value: 15500, stage: 'negotiation' },
   { id: 25, date: '2024-01-30', region: 'Rio de Janeiro', product: 'Cerca', seller: 'Luiza Ferreira', client: 'Niterói Fences', value: 6500, stage: 'closed' }
 ];
-
-'use client';
 
 export default function Dashboard() {
   const [filters, setFilters] = useState<Filters>({
