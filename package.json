@@ -1,5 +1,5 @@
 {
-  "name": "nextjs-app",
+  "name": "dashboard-metalfama",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "15.1.7",
+    "next": "15.1.9",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "lucide-react": "^0.441.0",
@@ -19,16 +19,13 @@
     "tailwind-merge": "^2.5.2"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "typescript": "^5.5.4",
-    "eslint": "^8.56.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "eslint-config-next": "15.1.7",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint-config-next": "15.1.9",
+    "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
-    "postcss": "^8.4.47",
-    "autoprefixer": "^10.4.20"
+    "typescript": "^5.6.3"
   }
 }
