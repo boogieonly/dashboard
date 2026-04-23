@@ -1,288 +1,289 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Scale, DollarSign, ShoppingCart, Upload, ChevronDown } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import {
+  Scale,
+  DollarSign,
+  TrendingUp,
+  Upload,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
-type DataRow = {
+type Item = {
   material: string;
   peso: number;
   valor: number;
 };
 
-type Stats = {
-  peso: number;
-  valor: number;
-  count: number;
-  ticketMedio: number;
-};
+type MaterialGroup = Record<string, Item[]>;
 
-const materialColors: Record<string, string> = {
-  Cobre: 'bg-orange-500',
-  Latão: 'bg-yellow-500',
-  Alumínio: 'bg-gray-500',
-  Inox: 'bg-blue-500',
-};
+const Page = () => {
+  const [items, setItems] = useState<Item[]>([]);
+  const [openMaterials, setOpenMaterials] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
-const initialData: DataRow[] = [
-  { material: 'Cobre', peso: 150.5, valor: 12045 },
-  { material: 'Cobre', peso: 75.2, valor: 6016 },
-  { material: 'Latão', peso: 180.0, valor: 16200 },
-  { material: 'Latão', peso: 95.5, valor: 8595 },
-  { material: 'Latão', peso: 120.3, valor: 10827 },
-  { material: 'Alumínio', peso: 300.0, valor: 9000 },
-  { material: 'Alumínio', peso: 250.7, valor: 7521 },
-  { material: 'Inox', peso: 100.0, valor: 15000 },
-  { material: 'Inox', peso: 80.4, valor: 12060 },
-];
-
-const Dashboard: React.FC = () => {
-  const [data, setData] = useState<DataRow[]>([]);
-  const [materials, setMaterials] = useState<Record<string, Stats>>({});
-  const [totals, setTotals] = useState<Stats>({ peso: 0, valor: 0, count: 0, ticketMedio: 0 });
-  const [chartData, setChartData] = useState<{ name: string; peso: number }[]>([]);
-  const [openMaterials, setOpenMaterials] = useState<Set<string>>(new Set(['Cobre']));
-  const [dragActive, setDragActive] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const computeAggregates = useCallback((dataRows: DataRow[]): { materials: Record<string, Stats>; totals: Stats } => {
-    const mats: Record<string, Stats> = {};
-    let totPeso = 0;
-    let totValor = 0;
-    let totCount = 0;
-
-    for (const row of dataRows) {
-      const m = row.material;
-      if (!mats[m]) {
-        mats[m] = { peso: 0, valor: 0, count: 0, ticketMedio: 0 };
-      }
-      mats[m].peso += row.peso;
-      mats[m].valor += row.valor;
-      mats[m].count += 1;
-      totPeso += row.peso;
-      totValor += row.valor;
-      totCount += 1;
-    }
-
-    for (const m in mats) {
-      mats[m].ticketMedio = mats[m].peso > 0 ? mats[m].valor / mats[m].peso : 0;
-    }
-
-    const totalStats: Stats = {
-      peso: totPeso,
-      valor: totValor,
-      count: totCount,
-      ticketMedio: totPeso > 0 ? totValor / totPeso : 0,
-    };
-
-    return { materials: mats, totals: totalStats };
-  }, []);
+  const exampleData: Item[] = [
+    { material: 'Cobre', peso: 12.5, valor: 187.50 },
+    { material: 'Cobre', peso: 8.3, valor: 124.50 },
+    { material: 'Cobre', peso: 15.0, valor: 225.00 },
+    { material: 'Latão', peso: 7.2, valor: 108.00 },
+    { material: 'Latão', peso: 9.8, valor: 147.00 },
+    { material: 'Latão', peso: 6.5, valor: 97.50 },
+    { material: 'Alumínio', peso: 20.1, valor: 120.60 },
+    { material: 'Alumínio', peso: 18.4, valor: 110.40 },
+    { material: 'Alumínio', peso: 22.7, valor: 136.20 },
+    { material: 'Inox', peso: 11.2, valor: 224.00 },
+    { material: 'Inox', peso: 14.6, valor: 292.00 },
+    { material: 'Inox', peso: 9.9, valor: 198.00 },
+  ];
 
   useEffect(() => {
-    setData(initialData);
+    if (items.length === 0) {
+      setItems(exampleData);
+    }
   }, []);
 
-  useEffect(() => {
-    if (data.length > 0) {
-      const aggs = computeAggregates(data);
-      setMaterials(aggs.materials);
-      setTotals(aggs.totals);
-      setChartData(
-        Object.entries(aggs.materials).map(([name, stats]) => ({
-          name,
-          peso: stats.peso,
-        }))
-      );
-    }
-  }, [data, computeAggregates]);
-
-  const toggleMaterial = (mat: string) => {
-    setOpenMaterials((prev) => {
-      const next = new Set(prev);
-      if (next.has(mat)) {
-        next.delete(mat);
-      } else {
-        next.add(mat);
-      }
-      return next;
-    });
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragActive(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragActive(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragActive(false);
-    const file = e.dataTransfer.files[0];
-    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
-      processFile(file);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
-    }
-  };
+    if (!file) return;
 
-  const processFile = (file: File) => {
+    setLoading(true);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const arrayBuffer = e.target?.result as ArrayBuffer;
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    reader.onload = (evt) => {
+      const data = evt.target?.result;
+      if (!data || typeof ArrayBuffer === 'undefined') return;
+
+      const workbook = XLSX.read(data, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(sheet) as DataRow[];
-      setData(json);
+      const worksheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet);
+
+      const newItems: Item[] = json
+        .map((row) => ({
+          material: row.Material?.toString()?.trim() || '',
+          peso: parseFloat(row.Peso?.toString() || '0'),
+          valor: parseFloat(row.Valor?.toString() || '0'),
+        }))
+        .filter((item) => item.material && item.peso > 0 && item.valor >= 0);
+
+      setItems(newItems);
+      setLoading(false);
     };
     reader.readAsArrayBuffer(file);
+  }, []);
+
+  const materialGroups = useMemo((): MaterialGroup => {
+    const groups: MaterialGroup = {};
+    items.forEach((item) => {
+      const mat = item.material.trim();
+      if (!groups[mat]) groups[mat] = [];
+      groups[mat].push(item);
+    });
+    return groups;
+  }, [items]);
+
+  const totalPeso = useMemo(
+    () => items.reduce((sum, i) => sum + i.peso, 0),
+    [items]
+  );
+  const totalValor = useMemo(
+    () => items.reduce((sum, i) => sum + i.valor, 0),
+    [items]
+  );
+  const totalItems = items.length;
+  const ticketMedio = totalItems > 0 ? totalValor / totalItems : 0;
+
+  const colorMap: Record<string, string> = {
+    Cobre: 'border-orange-500',
+    'Latão': 'border-yellow-500',
+    Alumínio: 'border-gray-400',
+    Inox: 'border-blue-600',
   };
 
-  const formatCurrency = (value: number) => {
-    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const toggleMaterial = (material: string) => {
+    setOpenMaterials((prev) => 
+      prev.includes(material)
+        ? prev.filter((m) => m !== material)
+        : [...prev, material]
+    );
   };
+
+  const chartData = useMemo(() =>
+    Object.entries(materialGroups).map(([material, group]) => ({
+      name: material,
+      peso: group.reduce((sum, i) => sum + i.peso, 0),
+      valor: group.reduce((sum, i) => sum + i.valor, 0),
+    })),
+    [materialGroups]
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-6 md:px-12 lg:px-24">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50 py-12">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-4 md:gap-0">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-orange-500 to-yellow-500 bg-clip-text text-transparent">
-            Metalfama | BI
+        <header className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-700 bg-clip-text text-transparent drop-shadow-lg">
+            Metalfama | Inteligência de Vendas
           </h1>
-          <div className="text-xl font-semibold text-gray-700">
-            {new Date().toLocaleDateString('pt-BR')}
-          </div>
         </header>
 
         {/* KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
-            <Scale className="w-16 h-16 mx-auto mb-4 text-orange-500" />
-            <h2 className="text-3xl font-bold text-gray-900">
-              {totals.peso.toLocaleString('pt-BR')} kg
-            </h2>
-            <p className="text-gray-600 mt-2 text-lg">Peso Total</p>
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-orange-500 p-8 flex items-center space-x-6">
+            <Scale className="h-12 w-12 text-orange-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">Peso Total</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900">
+                {totalPeso.toLocaleString('pt-BR')} kg
+              </p>
+            </div>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
-            <DollarSign className="w-16 h-16 mx-auto mb-4 text-green-500" />
-            <h2 className="text-3xl font-bold text-gray-900">
-              {formatCurrency(totals.valor)}
-            </h2>
-            <p className="text-gray-600 mt-2 text-lg">Valor Total</p>
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-yellow-500 p-8 flex items-center space-x-6">
+            <DollarSign className="h-12 w-12 text-yellow-500 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">Valor Total</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900">
+                R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
           </div>
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center hover:shadow-3xl transition-all duration-300">
-            <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-blue-500" />
-            <h2 className="text-3xl font-bold text-gray-900">
-              {totals.ticketMedio.toFixed(2)} R$/kg
-            </h2>
-            <p className="text-gray-600 mt-2 text-lg">Ticket Médio</p>
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-blue-600 p-8 flex items-center space-x-6">
+            <TrendingUp className="h-12 w-12 text-blue-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">Ticket Médio</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900">
+                R$ {ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Upload Area */}
-        <div
-          className={`bg-white rounded-3xl shadow-2xl p-12 mb-12 border-2 border-dashed transition-all duration-300 text-center group ${
-            dragActive ? 'border-orange-400 bg-orange-50 shadow-3xl scale-[1.02]' : 'border-gray-300 hover:border-orange-400 hover:shadow-3xl'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <Upload className="w-20 h-20 mx-auto mb-6 text-gray-400 group-hover:text-orange-500 transition-colors duration-300" />
-          <p className="text-xl font-semibold text-gray-700 mb-2">Arraste seu arquivo Excel aqui</p>
-          <p className="text-gray-500 mb-6">ou clique para selecionar</p>
+        {/* Upload */}
+        <div className="bg-white rounded-xl shadow-md border-l-4 border-indigo-500 p-8 mb-12">
+          <div className="flex items-center space-x-3 mb-6">
+            <Upload className="h-6 w-6 text-indigo-500 flex-shrink-0" />
+            <h2 className="text-2xl font-bold text-gray-900">Upload de Excel (.xlsx)</h2>
+          </div>
           <input
-            ref={fileInput}
             type="file"
-            className="hidden"
-            accept=".xlsx,.xls"
-            onChange={handleFileChange}
+            accept=".xlsx"
+            onChange={handleFileUpload}
+            disabled={loading}
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-6 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 cursor-pointer"
           />
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-semibold hover:bg-orange-600 transition-colors duration-300"
-          >
-            Selecionar Arquivo
-          </button>
+          {loading && (
+            <p className="mt-3 text-sm text-indigo-600 animate-pulse">Processando arquivo...</p>
+          )}
         </div>
 
         {/* Materials Accordions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
-          {Object.entries(materials).map(([mat, stats]) => (
-            materialColors[mat as keyof typeof materialColors] ? (
-              <div key={mat} className="bg-white rounded-3xl shadow-2xl overflow-hidden relative">
+        <div className="space-y-4 mb-12">
+          {Object.entries(materialGroups).map(([material, groupItems]) => {
+            const groupPeso = groupItems.reduce((sum, i) => sum + i.peso, 0);
+            const groupValor = groupItems.reduce((sum, i) => sum + i.valor, 0);
+            const groupCount = groupItems.length;
+            const borderColor = colorMap[material] || 'border-gray-200';
+            const isOpen = openMaterials.includes(material);
+
+            return (
+              <div key={material} className={`bg-white rounded-xl shadow-md ${borderColor} overflow-hidden`}>
                 <div
-                  className={`absolute left-0 top-0 h-full w-4 ${materialColors[mat as keyof typeof materialColors]} z-10`}
-                />
-                <div className="relative pl-4">
-                  <div
-                    className="p-6 cursor-pointer hover:bg-gray-50 transition-colors duration-300 flex justify-between items-center"
-                    onClick={() => toggleMaterial(mat)}
-                  >
-                    <div>
-                      <h3 className="text-2xl font-bold text-gray-900 capitalize">{mat}</h3>
-                      <p className="text-gray-600">{stats.count} itens</p>
-                    </div>
-                    <ChevronDown
-                      className={`w-8 h-8 text-gray-500 transition-transform duration-300 ${
-                        openMaterials.has(mat) ? 'rotate-180' : ''
-                      }`}
-                    />
+                  className="p-6 cursor-pointer hover:bg-gray-50 transition-all duration-200 flex justify-between items-center"
+                  onClick={() => toggleMaterial(material)}
+                >
+                  <div className="flex items-center space-x-4 flex-1">
+                    <h3 className="text-xl font-bold text-gray-900 capitalize flex-1 min-w-0 pr-4">
+                      {material}
+                    </h3>
+                    <p className="text-sm text-gray-500 hidden md:block">{groupCount} itens</p>
                   </div>
-                  {openMaterials.has(mat) && (
-                    <div className="p-6 pt-0 border-t border-gray-100 bg-gray-50">
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
-                        <div>
-                          <div className="text-2xl font-bold text-gray-900">{stats.peso.toLocaleString('pt-BR')} kg</div>
-                          <p className="text-sm text-gray-600 mt-1">Peso</p>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-gray-900">{formatCurrency(stats.valor)}</div>
-                          <p className="text-sm text-gray-600 mt-1">Valor</p>
-                        </div>
-                        <div>
-                          <div className="text-2xl font-bold text-orange-500">{stats.ticketMedio.toFixed(2)} R$/kg</div>
-                          <p className="text-sm text-gray-600 mt-1">Ticket Médio</p>
-                        </div>
-                        <div>
-                          <div className="text-xl font-semibold text-gray-900">
-                            {totals.valor > 0 ? ((stats.valor / totals.valor) * 100).toFixed(1) : '0'}%
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">do total</p>
-                        </div>
-                      </div>
+                  <div className="flex items-center space-x-8 text-right flex-shrink-0">
+                    <div className="text-center">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Peso</p>
+                      <p className="text-lg font-bold text-gray-900">{groupPeso.toLocaleString('pt-BR')} kg</p>
                     </div>
-                  )}
+                    <div className="text-center">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Valor</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        R$ {groupValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="ml-4">
+                      {isOpen ? (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      )}
+                    </div>
+                  </div>
                 </div>
+                {isOpen && (
+                  <div className="border-t border-gray-100">
+                    <div className="overflow-x-auto">
+                      <table className="w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">Item</th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-900 uppercase tracking-wider">Peso (kg)</th>
+                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-900 uppercase tracking-wider">Valor (R$)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {groupItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {material} #{idx + 1}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                                {item.peso.toLocaleString('pt-BR')}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 text-right">
+                                R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : null
-          ))}
+            );
+          })}
         </div>
 
         {/* Chart */}
         {chartData.length > 0 && (
-          <div className="bg-white rounded-3xl shadow-2xl p-8">
-            <h2 className="text-3xl font-bold mb-8 text-gray-900 text-center">Peso por Material</h2>
+          <div className="bg-white rounded-xl shadow-md border-l-4 border-emerald-500 p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Gráfico de Distribuição por Material</h2>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" fontSize={14} fontWeight="bold" />
+                <XAxis dataKey="name" fontSize={12} />
                 <YAxis />
-                <Tooltip />
+                <Tooltip
+                  formatter={(value: number, name: string) => {
+                    if (name === 'peso') {
+                      return [`${value.toLocaleString('pt-BR')} kg`, 'Peso'];
+                    }
+                    return [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor'];
+                  }}
+                />
                 <Legend />
-                <Bar dataKey="peso" fill="#f97316" name="Peso (kg)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="peso" fill="#f97316" name="Peso (kg)" />
+                <Bar dataKey="valor" fill="#eab308" name="Valor (R$)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -292,4 +293,4 @@ const Dashboard: React.FC = () => {
   );
 };
 
-export default Dashboard;
+export default Page;
