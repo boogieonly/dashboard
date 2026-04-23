@@ -1,713 +1,440 @@
-"use client";
-
 import React, { useState, useMemo, useCallback } from 'react';
 import {
+  ResponsiveContainer,
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
-  ResponsiveContainer,
   BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area
+  Bar
 } from 'recharts';
 import * as XLSX from 'xlsx';
 
-interface Sale {
+interface SalesData {
   id: number;
   date: string;
   region: string;
   product: string;
   seller: string;
   client: string;
-  revenue: number;
+  value: number;
+  stage: 'prospect' | 'negotiation' | 'proposal' | 'closed';
 }
 
-type PeriodFilter = "Última semana" | "Mês" | "Trimestre" | "Ano" | "Customizado";
-type RegionFilter = "Todos" | "Sudeste" | "Sul" | "Nordeste" | "Centro-Oeste" | "Norte";
-type ProductFilter = "Todos" | "Estruturas" | "Portões" | "Grades" | "Cobertura" | "Escadas";
-type SellerFilter = "Todas as opções" | "Caique" | "João" | "Maria" | "Pedro" | "Rafael";
+interface Filters {
+  startDate: string;
+  endDate: string;
+  region: string;
+  product: string;
+  seller: string;
+}
 
 interface SellerStat {
-  name: string;
-  revenue: number;
-  clients: number;
-  growth: number;
-  meta: number;
+  seller: string;
+  sales: number;
+  deals: number;
 }
 
-interface ClientStat {
-  name: string;
-  revenue: number;
-  growth: number;
-  status: string;
-}
+const rawData: SalesData[] = [
+  { id: 1, date: '2024-01-10', region: 'São Paulo', product: 'Estrutura Metálica', seller: 'Ana Silva', client: 'Construtora ABC', value: 25000, stage: 'closed' },
+  { id: 2, date: '2024-01-15', region: 'Rio de Janeiro', product: 'Telhado', seller: 'João Santos', client: 'Reforma RJ Ltda', value: 12000, stage: 'proposal' },
+  { id: 3, date: '2024-01-20', region: 'Minas Gerais', product: 'Portão Automático', seller: 'Maria Oliveira', client: 'Minas Obras', value: 18000, stage: 'closed' },
+  { id: 4, date: '2024-02-05', region: 'Bahia', product: 'Cerca', seller: 'Pedro Costa', client: 'Bahia Construções', value: 9000, stage: 'negotiation' },
+  { id: 5, date: '2024-02-12', region: 'São Paulo', product: 'Pórtico', seller: 'Luiza Ferreira', client: 'SP Estruturas', value: 32000, stage: 'closed' },
+  { id: 6, date: '2024-02-18', region: 'Rio Grande do Sul', product: 'Estrutura Metálica', seller: 'Ana Silva', client: 'Sul Metal', value: 15000, stage: 'proposal' },
+  { id: 7, date: '2024-03-03', region: 'Rio de Janeiro', product: 'Telhado', seller: 'João Santos', client: 'Rio Coberturas', value: 11000, stage: 'closed' },
+  { id: 8, date: '2024-03-10', region: 'Minas Gerais', product: 'Portão Automático', seller: 'Maria Oliveira', client: 'MG Portões', value: 22000, stage: 'closed' },
+  { id: 9, date: '2024-03-22', region: 'Bahia', product: 'Cerca', seller: 'Pedro Costa', client: 'Nordeste Ceras', value: 7500, stage: 'prospect' },
+  { id: 10, date: '2024-04-01', region: 'São Paulo', product: 'Pórtico', seller: 'Luiza Ferreira', client: 'Elite Construções', value: 28000, stage: 'closed' },
+  { id: 11, date: '2024-04-14', region: 'Rio Grande do Sul', product: 'Estrutura Metálica', seller: 'Ana Silva', client: 'Gaúcha Metalworks', value: 19000, stage: 'negotiation' },
+  { id: 12, date: '2024-04-20', region: 'Rio de Janeiro', product: 'Telhado', seller: 'João Santos', client: 'Copacabana Obras', value: 14000, stage: 'closed' },
+  { id: 13, date: '2024-05-05', region: 'Minas Gerais', product: 'Portão Automático', seller: 'Maria Oliveira', client: 'Belo Horizonte Gates', value: 16000, stage: 'proposal' },
+  { id: 14, date: '2024-05-12', region: 'Bahia', product: 'Cerca', seller: 'Pedro Costa', client: 'Salvador Fence', value: 8500, stage: 'closed' },
+  { id: 15, date: '2024-05-25', region: 'São Paulo', product: 'Pórtico', seller: 'Luiza Ferreira', client: 'Metalfama SP', value: 35000, stage: 'closed' },
+  { id: 16, date: '2024-06-02', region: 'Rio Grande do Sul', product: 'Estrutura Metálica', seller: 'Ana Silva', client: 'Porto Alegre Steel', value: 21000, stage: 'closed' },
+  { id: 17, date: '2024-06-10', region: 'Rio de Janeiro', product: 'Telhado', seller: 'João Santos', client: 'Fluminense Roofs', value: 13000, stage: 'negotiation' },
+  { id: 18, date: '2024-06-18', region: 'Minas Gerais', product: 'Portão Automático', seller: 'Maria Oliveira', client: 'Ouro Preto Portas', value: 20000, stage: 'closed' },
+  { id: 19, date: '2024-01-25', region: 'Bahia', product: 'Cerca', seller: 'Pedro Costa', client: 'Feira de Santana Fence', value: 10000, stage: 'proposal' },
+  { id: 20, date: '2024-02-28', region: 'São Paulo', product: 'Estrutura Metálica', seller: 'Luiza Ferreira', client: 'Capital Structures', value: 27000, stage: 'closed' },
+  // Additional data for completeness
+  { id: 21, date: '2024-03-15', region: 'Rio Grande do Sul', product: 'Telhado', seller: 'Ana Silva', client: 'Pampa Coberturas', value: 9500, stage: 'prospect' },
+  { id: 22, date: '2024-04-08', region: 'São Paulo', product: 'Portão Automático', seller: 'João Santos', client: 'São Paulo Gates', value: 17500, stage: 'closed' },
+  { id: 23, date: '2024-05-03', region: 'Minas Gerais', product: 'Pórtico', seller: 'Maria Oliveira', client: 'Juiz de Fora Portais', value: 24000, stage: 'closed' },
+  { id: 24, date: '2024-06-07', region: 'Bahia', product: 'Estrutura Metálica', seller: 'Pedro Costa', client: 'Recôncavo Steel', value: 15500, stage: 'negotiation' },
+  { id: 25, date: '2024-01-30', region: 'Rio de Janeiro', product: 'Cerca', seller: 'Luiza Ferreira', client: 'Niterói Fences', value: 6500, stage: 'closed' }
+];
 
-interface FunnelData {
-  name: string;
-  count: number;
-  value: number;
-}
+'use client';
 
-export default function Home() {
-  const [period, setPeriod] = useState<PeriodFilter>("Mês");
-  const [region, setRegion] = useState<RegionFilter>("Todos");
-  const [product, setProduct] = useState<ProductFilter>("Todos");
-  const [sellerFilter, setSellerFilter] = useState<SellerFilter>("Todas as opções");
+export default function Dashboard() {
+  const [filters, setFilters] = useState<Filters>({
+    startDate: '2024-01-01',
+    endDate: '2024-12-31',
+    region: '',
+    product: '',
+    seller: ''
+  });
 
-  const sellers = ["Caique", "João", "Maria", "Pedro", "Rafael"] as const;
-  const regions = ["Sudeste", "Sul", "Nordeste", "Centro-Oeste", "Norte"] as const;
-  const products = ["Estruturas", "Portões", "Grades", "Cobertura", "Escadas"] as const;
-  const clientsList = [
-    "Construtora São Paulo",
-    "Metais do Sul Ltda",
-    "Nordeste Estruturas",
-    "Fazenda Centro-Oeste",
-    "Norte Coberturas",
-    "João Silva Construções",
-    "Empresa ABC",
-    "Indústria XYZ",
-    "Comercial DEF",
-    "Residencial GHI",
-    "Industrial JKL",
-    "Construções MNO",
-    "Portões PQR",
-    "Grades STU",
-    "Escadas VWX"
-  ] as const;
+  const data = useMemo(() => rawData, []);
 
-  const generateMockSales = useCallback((sellersArr: string[], regs: string[], prods: string[], clis: string[]): Sale[] => {
-    const sales: Sale[] = [];
-    for (let i = 0; i < 300; i++) {
-      const year = 2023 + Math.floor(Math.random() * 2);
-      const month = 1 + Math.floor(Math.random() * 12);
-      const day = 1 + Math.floor(Math.random() * 28);
-      const date = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-      const seller = sellersArr[Math.floor(Math.random() * sellersArr.length)];
-      const reg = regs[Math.floor(Math.random() * regs.length)];
-      const prod = prods[Math.floor(Math.random() * prods.length)];
-      const cli = clis[Math.floor(Math.random() * clis.length)];
-      const revenue = 8000 + Math.random() * 92000;
-      sales.push({ id: i + 1, date, region: reg, product: prod, seller, client: cli, revenue });
-    }
-    return sales;
-  }, []);
-
-  const mockSales = useMemo(
-    () => generateMockSales(sellers, regions, products, clientsList),
-    [generateMockSales, sellers, regions, products, clientsList]
+  const sellers: string[] = useMemo(
+    () => Array.from(new Set(data.map((d) => d.seller))).sort((a, b) => a.localeCompare(b)),
+    [data]
   );
 
-  const formatCurrency = useCallback((value: number) => {
-    return value.toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-      minimumFractionDigits: 0
+  const regions: string[] = useMemo(
+    () => Array.from(new Set(data.map((d) => d.region))).sort((a, b) => a.localeCompare(b)),
+    [data]
+  );
+
+  const products: string[] = useMemo(
+    () => Array.from(new Set(data.map((d) => d.product))).sort((a, b) => a.localeCompare(b)),
+    [data]
+  );
+
+  const clientsList: string[] = useMemo(
+    () => Array.from(new Set(data.map((d) => d.client))).sort((a, b) => a.localeCompare(b)),
+    [data]
+  );
+
+  const filteredData: SalesData[] = useMemo(() => {
+    return data.filter((d) => {
+      const date = new Date(d.date);
+      return (
+        (!filters.startDate || date >= new Date(filters.startDate)) &&
+        (!filters.endDate || date <= new Date(filters.endDate)) &&
+        (!filters.region || d.region === filters.region) &&
+        (!filters.product || d.product === filters.product) &&
+        (!filters.seller || d.seller === filters.seller)
+      );
     });
-  }, []);
+  }, [data, filters]);
 
-  const getDateRange = useCallback((p: PeriodFilter) => {
-    const to = new Date();
-    to.setHours(23, 59, 59, 999);
-    let from = new Date(to);
-    switch (p) {
-      case 'Última semana':
-        from.setDate(to.getDate() - 7);
-        break;
-      case 'Mês':
-        from.setDate(1);
-        break;
-      case 'Trimestre':
-        const month = to.getMonth();
-        from.setMonth(month - (month % 3));
-        from.setDate(1);
-        break;
-      case 'Ano':
-        from.setMonth(0);
-        from.setDate(1);
-        break;
-      case 'Customizado':
-        from.setFullYear(to.getFullYear() - 1);
-        break;
-    }
-    from.setHours(0, 0, 0, 0);
-    return { from, to };
-  }, []);
-
-  const dateRange = useMemo(() => getDateRange(period), [period, getDateRange]);
-
-  const previousDateRange = useMemo(() => {
-    const { from, to } = dateRange;
-    const duration = to.getTime() - from.getTime();
-    const prevTo = new Date(from.getTime() - 86400000);
-    const prevFrom = new Date(prevTo.getTime() - duration);
-    return { from: prevFrom, to: prevTo };
-  }, [dateRange]);
-
-  const filteredSales = useMemo(() =>
-    mockSales.filter((s) => {
-      const d = new Date(s.date);
-      const inPeriod = d >= dateRange.from && d <= dateRange.to;
-      const inRegion = region === 'Todos' || s.region === region;
-      const inProduct = product === 'Todos' || s.product === product;
-      const inSeller = sellerFilter === 'Todas as opções' || s.seller === sellerFilter;
-      return inPeriod && inRegion && inProduct && inSeller;
-    }),
-    [mockSales, dateRange, region, product, sellerFilter]
+  const totalSales = useMemo(
+    () => filteredData.reduce((sum, d) => sum + d.value, 0),
+    [filteredData]
   );
 
-  const previousFilteredSales = useMemo(() =>
-    mockSales.filter((s) => {
-      const d = new Date(s.date);
-      const inPrevPeriod = d >= previousDateRange.from && d <= previousDateRange.to;
-      const inRegion = region === 'Todos' || s.region === region;
-      const inProduct = product === 'Todos' || s.product === product;
-      const inSeller = sellerFilter === 'Todas as opções' || s.seller === sellerFilter;
-      return inPrevPeriod && inRegion && inProduct && inSeller;
-    }),
-    [mockSales, previousDateRange, region, product, sellerFilter]
+  const avgTicket = useMemo(
+    () => (filteredData.length > 0 ? totalSales / filteredData.length : 0),
+    [filteredData, totalSales]
   );
 
-  const totalRevenue = useMemo(
-    () => filteredSales.reduce((sum, s) => sum + s.revenue, 0),
-    [filteredSales]
+  const closedDeals = useMemo(
+    () => filteredData.filter((d) => d.stage === 'closed').length,
+    [filteredData]
   );
 
-  const totalPrevRevenue = useMemo(
-    () => previousFilteredSales.reduce((sum, s) => sum + s.revenue, 0),
-    [previousFilteredSales]
-  );
-
-  const uniqueClientsCount = useMemo(
-    () => new Set(filteredSales.map((s) => s.client)).size,
-    [filteredSales]
-  );
-
-  const kpiGrowth = totalPrevRevenue > 0 ? ((totalRevenue - totalPrevRevenue) / totalPrevRevenue) * 100 : 0;
-
-  const currentSellerRev = useMemo(() =>
-    filteredSales.reduce((acc: Record<string, number>, s) => {
-      acc[s.seller] ??= 0;
-      acc[s.seller] += s.revenue;
-      return acc;
-    }, {}),
-    [filteredSales]
-  );
-
-  const currentSellerClients = useMemo(() =>
-    filteredSales.reduce((acc: Record<string, Set<string>>, s) => {
-      if (!acc[s.seller]) acc[s.seller] = new Set();
-      acc[s.seller].add(s.client);
-      return acc;
-    }, {}),
-    [filteredSales]
-  );
-
-  const prevSellerRev = useMemo(() =>
-    previousFilteredSales.reduce((acc: Record<string, number>, s) => {
-      acc[s.seller] ??= 0;
-      acc[s.seller] += s.revenue;
-      return acc;
-    }, {}),
-    [previousFilteredSales]
-  );
-
-  const sellerStats = useMemo<SellerStat[]>(() =>
-    sellers.map((name) => {
-      const revenue = currentSellerRev[name] || 0;
-      const clients = currentSellerClients[name]?.size || 0;
-      const prevRev = prevSellerRev[name] || 0;
-      const growth = prevRev > 0 ? ((revenue - prevRev) / prevRev) * 100 : 0;
-      const meta = 150000;
-      return { name, revenue, clients, growth, meta };
-    }).sort((a, b) => b.revenue - a.revenue),
-    [sellers, currentSellerRev, currentSellerClients, prevSellerRev]
-  );
-
-  const clientStats = useMemo<ClientStat[]>(() => {
-    const stats: Record<string, ClientStat> = {};
-    filteredSales.forEach((s) => {
-      if (!stats[s.client]) {
-        stats[s.client] = {
-          name: s.client,
-          revenue: 0,
-          growth: (Math.random() - 0.5) * 50,
-          status: (['Novo', 'Ativo', 'Em Risco', 'Cancelado'] as string[])[Math.floor(Math.random() * 4)]
-        };
+  const sellerStats: SellerStat[] = useMemo(() => {
+    const stats: Record<string, { sales: number; deals: number }> = {};
+    filteredData.forEach((d) => {
+      if (!stats[d.seller]) {
+        stats[d.seller] = { sales: 0, deals: 0 };
       }
-      stats[s.client].revenue += s.revenue;
+      stats[d.seller]!.sales += d.value;
+      stats[d.seller]!.deals += 1;
     });
-    return Object.values(stats).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-  }, [filteredSales]);
+    return Object.entries(stats)
+      .map(([seller, s]) => ({ seller, ...s }))
+      .sort((a, b) => b.sales - a.sales);
+  }, [filteredData]);
 
-  const lineData = useMemo(() => {
+  const timeSeries = useMemo(() => {
     const monthly: Record<string, number> = {};
-    filteredSales.forEach((s) => {
-      const month = s.date.substring(0, 7);
-      monthly[month] = (monthly[month] || 0) + s.revenue;
+    filteredData.forEach((d) => {
+      const month = d.date.slice(0, 7);
+      monthly[month] = (monthly[month] || 0) + d.value;
     });
-    return Object.keys(monthly)
-      .sort()
-      .map((month) => ({ month, revenue: monthly[month] }));
-  }, [filteredSales]);
+    return Object.entries(monthly)
+      .map(([month, sales]) => ({ month, sales: Number(sales) }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [filteredData]);
 
-  const productData = useMemo(() => {
-    const data: Record<string, number> = {};
-    filteredSales.forEach((s) => {
-      data[s.product] = (data[s.product] || 0) + s.revenue;
-    });
-    return Object.entries(data).map(([name, value]) => ({ name, value }));
-  }, [filteredSales]);
-
-  const regionData = useMemo(() => {
-    const data: Record<string, number> = {};
-    filteredSales.forEach((s) => {
-      data[s.region] = (data[s.region] || 0) + s.revenue;
-    });
-    return Object.entries(data).map(([name, value]) => ({ name, value }));
-  }, [filteredSales]);
-
-  const areaData = useMemo(() =>
-    sellerStats.map((s) => ({
-      name: s.name.substring(0, 3),
-      uv: s.revenue,
-      pv: s.meta,
-      amt: s.clients * 10000
-    })),
-    [sellerStats]
+  const regionSales = useMemo(
+    () =>
+      regions.map((r) => ({
+        region: r,
+        sales: filteredData
+          .filter((d) => d.region === r)
+          .reduce((s, d) => s + d.value, 0)
+      })),
+    [filteredData, regions]
   );
 
-  const funnelData = useMemo<FunnelData[]>(() => [
-    { name: 'Leads', count: Math.floor(uniqueClientsCount * 8 + 50), value: totalRevenue * 2.5 },
-    { name: 'Propostas', count: Math.floor(uniqueClientsCount * 4 + 20), value: totalRevenue * 1.8 },
-    { name: 'Contratos', count: Math.floor(uniqueClientsCount * 2 + 10), value: totalRevenue * 1.2 },
-    { name: 'Faturado', count: uniqueClientsCount, value: totalRevenue }
-  ], [uniqueClientsCount, totalRevenue]);
-
-  const openOpportunities = useMemo(() => funnelData[1].value - funnelData[2].value, [funnelData]);
-
-  const kpiConversion = useMemo(
-    () => Math.round((funnelData[3].count / (funnelData[0].count || 1)) * 100 * 10) / 10,
-    [funnelData]
+  const productSales = useMemo(
+    () =>
+      products.map((p) => ({
+        product: p,
+        sales: filteredData
+          .filter((d) => d.product === p)
+          .reduce((s, d) => s + d.value, 0)
+      })),
+    [filteredData, products]
   );
 
-  const kpis = useMemo(
-    () => [
-      { title: 'Receita Total', value: formatCurrency(totalRevenue), icon: '💰' },
-      { title: 'Clientes Atendidos', value: uniqueClientsCount.toLocaleString(), icon: '👥' },
-      {
-        title: 'Receita Média / Cliente',
-        value: formatCurrency(totalRevenue / uniqueClientsCount || 0),
-        icon: '📊'
-      },
-      { title: 'Taxa de Conversão', value: `${kpiConversion}%`, icon: '🔄' },
-      {
-        title: 'Crescimento vs. Anterior',
-        value: `${kpiGrowth > 0 ? '+' : ''}${Math.round(kpiGrowth)}%`,
-        icon: '📈'
-      }
-    ],
-    [totalRevenue, uniqueClientsCount, kpiConversion, kpiGrowth, formatCurrency]
-  );
-
-  const exportToExcel = useCallback(() => {
-    const wb = XLSX.utils.book_new();
-
-    const kpiData = [
-      ['Métrica', 'Valor'],
-      ['Receita Total', totalRevenue],
-      ['Clientes Atendidos', uniqueClientsCount],
-      ['Receita Média por Cliente', totalRevenue / uniqueClientsCount || 0],
-      ['Taxa de Conversão (%)', kpiConversion],
-      ['Crescimento (%)', kpiGrowth]
-    ];
-    const kpiWs = XLSX.utils.aoa_to_sheet(kpiData);
-    XLSX.utils.book_append_sheet(wb, kpiWs, 'KPIs');
-
-    const sellerData = [
-      ['Vendedor', 'Receita Realizada', 'Meta', '% Realizado', 'Clientes Atendidos', 'Crescimento %'],
-      ...sellerStats.map((s) => [
-        s.name,
-        s.revenue,
-        s.meta,
-        Math.round((s.revenue / s.meta) * 100 * 10) / 10,
-        s.clients,
-        Math.round(s.growth * 10) / 10
-      ])
-    ];
-    const sellerWs = XLSX.utils.aoa_to_sheet(sellerData);
-    XLSX.utils.book_append_sheet(wb, sellerWs, 'Vendedores');
-
-    const clientData = [
-      ['Cliente', 'Receita', '% Crescimento', 'Status'],
-      ...clientStats.map((c) => [c.name, c.revenue, c.growth, c.status])
-    ];
-    const clientWs = XLSX.utils.aoa_to_sheet(clientData);
-    XLSX.utils.book_append_sheet(wb, clientWs, 'Clientes');
-
-    const funnelDataExport = [
-      ['Estágio', 'Contagem', 'Valor'],
-      ...funnelData.map((f) => [f.name, f.count, f.value])
-    ];
-    const funnelWs = XLSX.utils.aoa_to_sheet(funnelDataExport);
-    XLSX.utils.book_append_sheet(wb, funnelWs, 'Funil');
-
-    const salesData = filteredSales.map((s) => ({
-      ID: s.id,
-      Data: s.date,
-      'Região': s.region,
-      Produto: s.product,
-      Vendedor: s.seller,
-      Cliente: s.client,
-      Receita: s.revenue
+  const funnelData = useMemo(() => {
+    const stages = ['prospect', 'negotiation', 'proposal', 'closed'] as const;
+    return stages.map((stage) => ({
+      stage,
+      count: filteredData.filter((d) => d.stage === stage).length,
+      sales: filteredData
+        .filter((d) => d.stage === stage)
+        .reduce((s, d) => s + d.value, 0)
     }));
-    const salesWs = XLSX.utils.json_to_sheet(salesData);
-    XLSX.utils.book_append_sheet(wb, salesWs, 'Vendas');
+  }, [filteredData]);
 
-    XLSX.writeFile(
-      wb,
-      `dashboard_metalfama_${new Date().toISOString().slice(0, 10)}.xlsx`
+  const topClients = useMemo(() => {
+    const clientStats: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      clientStats[d.client] = (clientStats[d.client] || 0) + d.value;
+    });
+    return Object.entries(clientStats)
+      .map(([client, sales]) => ({ client, sales: Number(sales) }))
+      .sort((a, b) => b.sales - a.sales)
+      .slice(0, 10);
+  }, [filteredData]);
+
+  const sellerColorMap = useMemo(() => {
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
+    return Object.fromEntries(
+      sellers.map((s, i) => [s, colors[i % colors.length]])
     );
-  }, [
-    totalRevenue,
-    uniqueClientsCount,
-    kpiConversion,
-    kpiGrowth,
-    sellerStats,
-    clientStats,
-    funnelData,
-    filteredSales
-  ]);
+  }, [sellers]);
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+  const updateFilter = useCallback((key: keyof Filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const exportExcel = useCallback(() => {
+    const ws = XLSX.utils.json_to_sheet(filteredData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dados de Vendas');
+    XLSX.writeFile(wb, 'metalfama_vendas.xlsx');
+  }, [filteredData]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/20 to-gray-900 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-            Dashboard Metalfama
-          </h1>
-          <button
-            onClick={exportToExcel}
-            className="bg-green-600/80 hover:bg-green-500/90 backdrop-blur-xl border border-green-500/50 px-8 py-4 rounded-2xl font-semibold transition-all shadow-2xl hover:shadow-3xl hover:-translate-y-0.5 whitespace-nowrap"
+    <div className="min-h-screen bg-base-100 p-8 max-w-7xl mx-auto">
+      <h1 className="text-4xl font-bold mb-12 text-center text-primary">Dashboard Metalfama</h1>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 lg:grid-cols-6 gap-4 mb-12 items-end">
+        <div>
+          <label className="label">
+            <span className="label-text">Início</span>
+          </label>
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => updateFilter('startDate', e.target.value)}
+            className="input input-bordered w-full"
+          />
+        </div>
+        <div>
+          <label className="label">
+            <span className="label-text">Fim</span>
+          </label>
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={(e) => updateFilter('endDate', e.target.value)}
+            className="input input-bordered w-full"
+          />
+        </div>
+        <div>
+          <label className="label">
+            <span className="label-text">Região</span>
+          </label>
+          <select
+            value={filters.region}
+            onChange={(e) => updateFilter('region', e.target.value)}
+            className="select select-bordered w-full"
           >
-            📊 Exportar Excel
-          </button>
+            <option value="">Todas</option>
+            {regions.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
         </div>
+        <div>
+          <label className="label">
+            <span className="label-text">Produto</span>
+          </label>
+          <select
+            value={filters.product}
+            onChange={(e) => updateFilter('product', e.target.value)}
+            className="select select-bordered w-full"
+          >
+            <option value="">Todos</option>
+            {products.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">
+            <span className="label-text">Vendedor</span>
+          </label>
+          <select
+            value={filters.seller}
+            onChange={(e) => updateFilter('seller', e.target.value)}
+            className="select select-bordered w-full"
+          >
+            <option value="">Todos</option>
+            {sellers.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button onClick={exportExcel} className="btn btn-primary w-full lg:w-auto">
+          Exportar Excel
+        </button>
+      </div>
 
-        {/* Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12 p-8 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl">
-          <div>
-            <label className="block text-sm font-semibold mb-3 text-gray-300">Período</label>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
-              className="w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/30 transition-all hover:bg-white/20"
-            >
-              <option>Última semana</option>
-              <option>Mês</option>
-              <option>Trimestre</option>
-              <option>Ano</option>
-              <option>Customizado</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-3 text-gray-300">Região</label>
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value as RegionFilter)}
-              className="w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/30 transition-all hover:bg-white/20"
-            >
-              <option>Todos</option>
-              {regions.map((r) => (
-                <option key={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-3 text-gray-300">Produto</label>
-            <select
-              value={product}
-              onChange={(e) => setProduct(e.target.value as ProductFilter)}
-              className="w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/30 transition-all hover:bg-white/20"
-            >
-              <option>Todos</option>
-              {products.map((p) => (
-                <option key={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold mb-3 text-gray-300">Vendedor</label>
-            <select
-              value={sellerFilter}
-              onChange={(e) => setSellerFilter(e.target.value as SellerFilter)}
-              className="w-full bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl px-5 py-4 text-white font-medium focus:outline-none focus:ring-4 focus:ring-blue-500/30 transition-all hover:bg-white/20"
-            >
-              <option>Todas as opções</option>
-              {sellers.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+        <div className="card bg-base-100 shadow-xl border border-primary/50">
+          <div className="card-body items-center text-center">
+            <h2 className="card-title text-lg">Vendas Totais</h2>
+            <p className="text-4xl font-bold text-primary">R$ {totalSales.toLocaleString()}</p>
           </div>
         </div>
-
-        {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
-          {kpis.map((kpi, i) => (
-            <div
-              key={i}
-              className="group bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl hover:bg-white/10 hover:shadow-3xl transition-all duration-300 hover:-translate-y-2 cursor-pointer"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-3xl group-hover:scale-110 transition-transform duration-300">
-                  {kpi.icon}
-                </span>
-              </div>
-              <h3 className="text-gray-400 font-medium mb-2 text-sm uppercase tracking-wide">
-                {kpi.title}
-              </h3>
-              <p className="text-4xl lg:text-3xl font-black text-white drop-shadow-lg">
-                {kpi.value}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl font-bold mb-6">Receita ao Longo do Tempo</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={lineData}>
-                <CartesianGrid strokeDasharray="5 5" stroke="hsla(0,0%,100%,0.1)" />
-                <XAxis dataKey="month" stroke="#9CA3AF" fontSize={12} />
-                <YAxis stroke="#9CA3AF" fontSize={12} />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#00C49F"
-                  strokeWidth={4}
-                  dot={{ fill: '#00C49F', strokeWidth: 2 }}
-                  activeDot={{ r: 8, stroke: '#00C49F', strokeWidth: 3 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl font-bold mb-6">Receita por Produto</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={productData}>
-                <CartesianGrid strokeDasharray="5 5" stroke="hsla(0,0%,100%,0.1)" />
-                <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} />
-                <YAxis stroke="#9CA3AF" fontSize={12} />
-                <Tooltip />
-                <Bar
-                  dataKey="value"
-                  fill="#8884d8"
-                  radius={[8, 8, 0, 0]}
-                  className="hover:fill-opacity-80"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl font-bold mb-6">Distribuição por Região</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart>
-                <Pie
-                  data={regionData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={110}
-                  label
-                >
-                  {regionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl font-bold mb-6">Performance Acumulada Vendedores</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <AreaChart data={areaData}>
-                <CartesianGrid strokeDasharray="5 5" stroke="hsla(0,0%,100%,0.1)" />
-                <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} />
-                <YAxis stroke="#9CA3AF" fontSize={12} />
-                <Tooltip />
-                <Area
-                  type="monotone"
-                  dataKey="uv"
-                  stroke="#00C49F"
-                  fill="url(#areaGradient)"
-                  strokeWidth={3}
-                />
-                <defs>
-                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#00C49F" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#00C49F" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-              </AreaChart>
-            </ResponsiveContainer>
+        <div className="card bg-base-100 shadow-xl border border-secondary/50">
+          <div className="card-body items-center text-center">
+            <h2 className="card-title text-lg">Ticket Médio</h2>
+            <p className="text-4xl font-bold text-secondary">R$ {avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
-
-        {/* Seller Performance */}
-        <div className="mb-16">
-          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-            Performance dos Vendedores
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-            {sellerStats.map((stat, index) => {
-              const rank = index < 3 ? (['🥇', '🥈', '🥉'] as string[])[index] : `${index + 1}º`;
-              const pct = stat.revenue / stat.meta * 100;
-              let bgClass = '';
-              let ringClass = '';
-              if (pct >= 100) {
-                bgClass = 'bg-green-500/20 border-green-400/40 ';
-                ringClass = 'ring-green-500/30 ring-offset-green-500/20';
-              } else if (pct >= 80) {
-                bgClass = 'bg-yellow-500/20 border-yellow-400/40 ';
-                ringClass = 'ring-yellow-500/30 ring-offset-yellow-500/20';
-              } else {
-                bgClass = 'bg-red-500/20 border-red-400/40 ';
-                ringClass = 'ring-red-500/30 ring-offset-red-500/20';
-              }
-              return (
-                <div
-                  key={stat.name}
-                  className={`p-8 rounded-3xl border shadow-2xl backdrop-blur-xl hover:shadow-3xl transition-all duration-300 hover:-translate-y-3 hover:scale-[1.02] group ${bgClass}${ringClass} ring-4 ring-offset-4 ring-offset-gray-900/50`}
-                >
-                  <div className="flex items-center justify-between mb-6">
-                    <span className="text-4xl font-black drop-shadow-lg group-hover:scale-110 transition-transform">
-                      {rank}
-                    </span>
-                    <span className="text-3xl">👨‍💼</span>
-                  </div>
-                  <h3 className="text-2xl font-bold mb-6 text-white drop-shadow-lg">{stat.name}</h3>
-                  <div className="space-y-3 text-lg">
-                    <p>
-                      Receita: <span className="font-black text-2xl">{formatCurrency(stat.revenue)}</span>
-                    </p>
-                    <p>
-                      vs. Meta <span className={`font-black ${pct >= 100 ? 'text-green-400' : pct >= 80 ? 'text-yellow-400' : 'text-red-400'}`}>({Math.round(pct)}%)</span>
-                    </p>
-                    <p>Clientes: <span className="font-bold text-xl">{stat.clients}</span></p>
-                    <p>
-                      Crescimento:{' '}
-                      <span className={`font-black text-xl ${stat.growth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {stat.growth > 0 ? '+' : ''}{Math.round(stat.growth)}%
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="card bg-base-100 shadow-xl border border-success/50">
+          <div className="card-body items-center text-center">
+            <h2 className="card-title text-lg">Fechamentos</h2>
+            <p className="text-4xl font-bold text-success">{closedDeals}</p>
           </div>
         </div>
+        <div className="card bg-base-100 shadow-xl border border-accent/50">
+          <div className="card-body items-center text-center">
+            <h2 className="card-title text-lg">Total Oportunidades</h2>
+            <p className="text-4xl font-bold text-accent">{filteredData.length}</p>
+          </div>
+        </div>
+      </div>
 
-        {/* Clients Analysis & Funnel */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-              Top 10 Clientes por Receita
-            </h2>
-            <div className="overflow-x-auto rounded-2xl border border-white/10">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-white/5 backdrop-blur border-b border-white/20">
-                    <th className="text-left p-5 font-bold text-lg">Nome</th>
-                    <th className="text-right p-5 font-bold text-lg">Receita</th>
-                    <th className="text-right p-5 font-bold text-lg">% Cresc.</th>
-                    <th className="text-right p-5 font-bold text-lg">Status</th>
+      {/* Seller Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Ranking de Vendedores</h2>
+          <div className="overflow-x-auto">
+            <table className="table w-full">
+              <thead>
+                <tr>
+                  <th>Posição</th>
+                  <th>Vendedor</th>
+                  <th>Vendas</th>
+                  <th>Oportunidades</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sellerStats.map((s, i) => (
+                  <tr
+                    key={s.seller}
+                    style={{ backgroundColor: `${sellerColorMap[s.seller as keyof typeof sellerColorMap]}20` }}
+                    className={i < 3 ? 'font-bold' : ''}
+                  >
+                    <td>{i + 1}</td>
+                    <td style={{ color: sellerColorMap[s.seller as keyof typeof sellerColorMap] }}>
+                      {s.seller}
+                    </td>
+                    <td>R$ {s.sales.toLocaleString()}</td>
+                    <td>{s.deals}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {clientStats.map((client, i) => (
-                    <tr
-                      key={i}
-                      className={`hover:bg-white/10 transition-all border-b border-white/5 last:border-b-0 ${
-                        (client.status === 'Em Risco' || client.status === 'Cancelado')
-                          ? 'bg-red-500/10 border-r-4 border-red-500/50'
-                          : ''
-                      }`}
-                    >
-                      <td className="p-5 font-semibold text-lg">{client.name}</td>
-                      <td className="p-5 text-right font-black text-2xl text-white">
-                        {formatCurrency(client.revenue)}
-                      </td>
-                      <td className="p-5 text-right font-bold text-xl">
-                        <span
-                          className={`px-3 py-1 rounded-full ${
-                            client.growth >= 0 ? 'bg-green-500/30 text-green-300' : 'bg-red-500/30 text-red-300'
-                          }`}
-                        >
-                          {client.growth > 0 ? '+' : ''}{Math.round(client.growth)}%
-                        </span>
-                      </td>
-                      <td className="p-5 text-right">
-                        <span
-                          className={`px-4 py-2 rounded-full text-sm font-bold ${
-                            client.status === 'Novo'
-                              ? 'bg-green-500/30 text-green-300 border border-green-400/50'
-                              : client.status === 'Ativo'
-                              ? 'bg-blue-500/30 text-blue-300 border border-blue-400/50'
-                              : client.status === 'Em Risco'
-                              ? 'bg-yellow-500/30 text-yellow-300 border border-yellow-400/50'
-                              : 'bg-red-500/30 text-red-300 border border-red-400/50'
-                          }`}
-                        >
-                          {client.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Vendas ao Longo do Tempo</h2>
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={timeSeries}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+              <Line type="monotone" dataKey="sales" stroke="#8884d8" strokeWidth={3} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-          <div className="space-y-8">
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
-              <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                Funil de Vendas
-              </h2>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={funnelData} layout="vertical">
-                  <CartesianGrid strokeDasharray="5 5" stroke="hsla(0,0%,100%,0.1)" vertical={false} />
-                  <XAxis type="number" stroke="#9CA3AF" />
-                  <YAxis type="category" dataKey="name" stroke="#9CA3AF" />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="value" fill="#8884d8" name="Valor" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="count" fill="#00C49F" name="Contagem" radius={[6, 6, 0, 0]} maxBarSize={25} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="bg-gradient-to-r from-orange-500/20 via-yellow-500/20 to-orange-500/20 backdrop-blur-xl border-2 border-yellow-500/40 rounded-3xl p-10 shadow-2xl hover:shadow-3xl transition-all hover:scale-[1.02] hover:border-yellow-400/60">
-              <h3 className="text-3xl font-bold mb-4 text-yellow-300 drop-shadow-lg">🚨 Oportunidades em Aberto</h3>
-              <p className="text-6xl lg:text-5xl font-black text-yellow-400 drop-shadow-2xl mb-2">
-                {formatCurrency(openOpportunities)}
-              </p>
-              <p className="text-xl text-yellow-200 font-semibold">Valor total de propostas pendentes</p>
-            </div>
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Vendas por Região</h2>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={regionSales}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="region" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="sales" fill="#8884d8" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Vendas por Produto</h2>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={productSales}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="product" angle={-45} textAnchor="end" height={80} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="sales" fill="#82ca9d" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Clients & Funnel */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Top 10 Clientes</h2>
+          <div className="overflow-x-auto">
+            <table className="table w-full">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Vendas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topClients.map((c) => (
+                  <tr key={c.client}>
+                    <td>{c.client}</td>
+                    <td>R$ {c.sales.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold mb-6">Funil de Vendas</h2>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart data={funnelData} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" />
+              <YAxis dataKey="stage" type="category" />
+              <Tooltip />
+              <Bar dataKey="count" fill="#8884d8" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
