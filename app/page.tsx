@@ -1,354 +1,395 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
 import * as XLSX from 'xlsx';
-import FechamentoMensal from './componentes/FechamentoMensal';  // ← ESTA LINHA DEVE EXISTIR
 
-// Interface para registro de vendas
-interface SalesRecord {
+type Transaction = {
   id: number;
-  date: string; // formato YYYY-MM-DD
-  product: string;
+  date: string;
+  description: string;
   category: string;
-  quantity: number;
-  price: number;
-  total: number;
-}
+  amount: number;
+  type: 'revenue' | 'expense';
+};
 
-type ActiveTab = 'dashboard' | 'fechamento';
+type Totals = {
+  revenue: number;
+  expense: number;
+  net: number;
+};
 
-type Category = 'Eletrônicos' | 'Roupas' | 'Alimentos' | 'Livros';
+type MonthlySummary = {
+  month: string;
+  revenue: number;
+  expense: number;
+  net: number;
+};
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+const COLORS = [
+  '#0088FE',
+  '#00C49F',
+  '#FFBB28',
+  '#FF8042',
+  '#912EFF',
+  '#FF4444',
+  '#00FF00',
+  '#FFD700',
+  '#FF69B4',
+  '#00BFFF',
+];
 
-const CATEGORIES: Category[] = ['Eletrônicos', 'Roupas', 'Alimentos', 'Livros'];
+const FechamentoMensal = ({ summary }: { summary: MonthlySummary[] }) => (
+  <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8">
+    <h2 className="text-3xl font-bold mb-6 text-white drop-shadow-lg">Fechamento Mensal</h2>
+    <div className="overflow-x-auto">
+      <table className="w-full text-white text-lg">
+        <thead>
+          <tr className="bg-white/20">
+            <th className="p-4 text-left font-semibold">Mês</th>
+            <th className="p-4 text-left font-semibold">Receita</th>
+            <th className="p-4 text-left font-semibold">Despesa</th>
+            <th className="p-4 text-left font-semibold">Líquido</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.map((row, index) => (
+            <tr key={row.month} className={index % 2 === 0 ? 'bg-white/5' : ''}>
+              <td className="p-4">{row.month}</td>
+              <td className="p-4">R$ {row.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+              <td className="p-4">R$ {row.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+              <td className={`p-4 font-semibold ${row.net >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                R$ {row.net.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
 
-// Componente principal da página
-export default function HomePage() {
-  // Estado para controlar qual aba está ativa
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+export default function Dashboard() {
+  const [data, setData] = useState<Transaction[]>([]);
+  const [filteredData, setFilteredData] = useState<Transaction[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [loading, setLoading] = useState(false);
 
-  // Estado para dados de vendas
-  const [salesData, setSalesData] = useState<SalesRecord[]>([]);
-  const [filteredData, setFilteredData] = useState<SalesRecord[]>([]);
+  const availableYears = useMemo(() => {
+    const years = new Set(data.map((d) => d.date.slice(0, 4)));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [data]);
 
-  // Estados para filtros
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const chartData = useMemo(() => {
+    const monthly: Record<string, { month: string; revenue: number; expense: number }> = {};
+    filteredData.forEach((t) => {
+      const monthKey = t.date.slice(0, 7);
+      if (!monthly[monthKey]) {
+        monthly[monthKey] = { month: monthKey, revenue: 0, expense: 0 };
+      }
+      if (t.type === 'revenue') {
+        monthly[monthKey].revenue += t.amount;
+      } else {
+        monthly[monthKey].expense += t.amount;
+      }
+    });
+    return Object.values(monthly).sort((a, b) => a.month.localeCompare(b.month));
+  }, [filteredData]);
 
-  // Carrega dados mock iniciais
-  useEffect(() => {
-    const mockData: SalesRecord[] = [
-      { id: 1, date: '2024-01-15', product: 'iPhone 15', category: 'Eletrônicos', quantity: 2, price: 5000, total: 10000 },
-      { id: 2, date: '2024-01-16', product: 'Camiseta', category: 'Roupas', quantity: 5, price: 50, total: 250 },
-      { id: 3, date: '2024-01-17', product: 'Arroz', category: 'Alimentos', quantity: 10, price: 10, total: 100 },
-      { id: 4, date: '2024-01-18', product: 'Livro React', category: 'Livros', quantity: 3, price: 80, total: 240 },
-      { id: 5, date: '2024-01-19', product: 'Samsung TV', category: 'Eletrônicos', quantity: 1, price: 3000, total: 3000 },
-      // Mais dados para gráficos...
-      { id: 6, date: '2024-01-20', product: 'Calça Jeans', category: 'Roupas', quantity: 4, price: 120, total: 480 },
-      { id: 7, date: '2024-01-21', product: 'Macarrão', category: 'Alimentos', quantity: 8, price: 5, total: 40 },
-      { id: 8, date: '2024-01-22', product: 'TypeScript Book', category: 'Livros', quantity: 2, price: 100, total: 200 },
-      { id: 9, date: '2024-02-01', product: 'Laptop Dell', category: 'Eletrônicos', quantity: 1, price: 4000, total: 4000 },
-      { id: 10, date: '2024-02-02', product: 'Vestido', category: 'Roupas', quantity: 3, price: 150, total: 450 },
-    ];
-    setSalesData(mockData);
+  const pieData = useMemo(() => {
+    const categoryTotals: Record<string, number> = {};
+    filteredData.forEach((t) => {
+      categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+    });
+    return Object.entries(categoryTotals)
+      .map(([name, value]) => ({ name, value: Number(value) }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredData]);
+
+  const totals = useMemo((): Totals => {
+    const res = filteredData.reduce(
+      (acc, t) => {
+        if (t.type === 'revenue') acc.revenue += t.amount;
+        else acc.expense += t.amount;
+        return acc;
+      },
+      { revenue: 0, expense: 0 }
+    );
+    res.net = res.revenue - res.expense;
+    return res;
+  }, [filteredData]);
+
+  const monthlySummary = useMemo((): MonthlySummary[] => {
+    const summary: Record<string, { revenue: number; expense: number }> = {};
+    filteredData.forEach((t) => {
+      const monthKey = t.date.slice(0, 7);
+      if (!summary[monthKey]) {
+        summary[monthKey] = { revenue: 0, expense: 0 };
+      }
+      if (t.type === 'revenue') {
+        summary[monthKey].revenue += t.amount;
+      } else {
+        summary[monthKey].expense += t.amount;
+      }
+    });
+    return Object.entries(summary)
+      .map(([month, s]) => ({ month, revenue: s.revenue, expense: s.expense, net: s.revenue - s.expense }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [filteredData]);
+
+  const importExcel = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json<Transaction>(sheet);
+        setData(jsonData);
+        setFilteredData(jsonData);
+      } catch (error) {
+        console.error('Error reading Excel:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
   }, []);
 
-  // Aplica filtros nos dados
+  const exportExcel = useCallback(() => {
+    const ws = XLSX.utils.json_to_sheet(filteredData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Fechamentos');
+    XLSX.writeFile(wb, `fechamentos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }, [filteredData]);
+
+  const updateFilters = useCallback(() => {
+    const filtered = data.filter((item) => {
+      const itemYear = item.date.slice(0, 4);
+      const itemMonth = item.date.slice(5, 7);
+      return (!selectedYear || itemYear === selectedYear) && (!selectedMonth || itemMonth === selectedMonth);
+    });
+    setFilteredData(filtered);
+  }, [data, selectedYear, selectedMonth]);
+
   useEffect(() => {
-    let data = salesData;
-    if (startDate) {
-      data = data.filter((d) => new Date(d.date) >= new Date(startDate));
-    }
-    if (endDate) {
-      data = data.filter((d) => new Date(d.date) <= new Date(endDate));
-    }
-    if (categoryFilter) {
-      data = data.filter((d) => d.category === categoryFilter);
-    }
-    setFilteredData(data);
-  }, [salesData, startDate, endDate, categoryFilter]);
+    updateFilters();
+  }, [updateFilters]);
 
-  // Calcula métricas
-  const totalSales = filteredData.reduce((sum, sale) => sum + sale.total, 0);
-  const today = new Date().toISOString().split('T')[0];
-  const todaySales = filteredData.filter((d) => d.date === today).reduce((sum, sale) => sum + sale.total, 0);
-  const avgSale = filteredData.length > 0 ? totalSales / filteredData.length : 0;
-
-  // Dados para gráfico de linha (vendas por data)
-  const chartData = Array.from(
-    filteredData.reduce((acc: Map<string, number>, sale) => {
-      const dateKey = sale.date;
-      acc.set(dateKey, (acc.get(dateKey) || 0) + sale.total);
-      return acc;
-    }, new Map())
-  )
-    .map(([date, total]) => ({ date, total }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  // Dados para gráfico de pizza (por categoria)
-  const categoryTotals: Record<string, number> = filteredData.reduce((acc, sale) => {
-    acc[sale.category] = (acc[sale.category] || 0) + sale.total;
-    return acc;
-  }, {});
-  const pieData = Object.entries(categoryTotals).map(([name, value], index) => ({
-    name,
-    value,
-    fill: COLORS[index % COLORS.length],
-  }));
-
-  // Função para importar Excel
-  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt: ProgressEvent<FileReader>) => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      /* Converte planilha para JSON */
-      const importedData = XLSX.utils.sheet_to_json<SalesRecord>(ws);
-      /* Adiciona IDs únicos */
-      const dataWithIds = importedData.map((row: any, index: number) => ({
-        ...row,
-        id: salesData.length + index + 1,
-        total: row.quantity * row.price, // Calcula total se não existir
-      }));
-      setSalesData((prev) => [...prev, ...dataWithIds]);
-      /* Limpa input */
-      e.target.value = '';
-    };
-    reader.readAsBinaryString(file);
-  };
+  useEffect(() => {
+    const sampleData: Transaction[] = [
+      { id: 1, date: '2024-01-15', description: 'Venda produto A', category: 'Vendas', amount: 1500, type: 'revenue' },
+      { id: 2, date: '2024-01-20', description: 'Aluguel loja', category: 'Aluguel', amount: 800, type: 'expense' },
+      { id: 3, date: '2024-01-25', description: 'Serviço freelance', category: 'Serviços', amount: 1200, type: 'revenue' },
+      { id: 4, date: '2024-02-10', description: 'Salários equipe', category: 'Pessoal', amount: 2000, type: 'expense' },
+      { id: 5, date: '2024-02-18', description: 'Venda produto B', category: 'Vendas', amount: 1800, type: 'revenue' },
+      { id: 6, date: '2024-03-05', description: 'Manutenção', category: 'Manutenção', amount: 300, type: 'expense' },
+      { id: 7, date: '2024-03-12', description: 'Consultoria', category: 'Serviços', amount: 900, type: 'revenue' },
+      { id: 8, date: '2024-04-08', description: 'Energia', category: 'Utilidades', amount: 450, type: 'expense' },
+      { id: 9, date: '2024-04-22', description: 'Venda grande', category: 'Vendas', amount: 2500, type: 'revenue' },
+      { id: 10, date: '2024-05-03', description: 'Marketing', category: 'Marketing', amount: 600, type: 'expense' },
+      { id: 11, date: '2024-05-15', description: 'Serviço B', category: 'Serviços', amount: 1100, type: 'revenue' },
+      { id: 12, date: '2024-06-01', description: 'Impostos', category: 'Impostos', amount: 700, type: 'expense' },
+    ];
+    setData(sampleData);
+    setFilteredData(sampleData);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-500 via-blue-500 to-indigo-600 p-4 md:p-8 font-sans">
-      {/* Header com botões de navegação */}
-      <header className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-6 md:p-8 mb-8">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 md:gap-0">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent drop-shadow-lg">
-            📊 Painel de Controle
+    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-orange-500 p-6 md:p-12">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 mb-8">
+          <h1 className="text-5xl font-extrabold mb-4 bg-gradient-to-r from-white via-blue-100 to-purple-100 bg-clip-text text-transparent drop-shadow-2xl">
+            Dashboard Financeiro
           </h1>
-          <div className="flex flex-wrap gap-3">
+          <p className="text-xl text-white/90 mb-8">
+            Gerencie seus fechamentos mensais com gráficos interativos e exportação Excel.
+          </p>
+          <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center">
+            <label className="flex-1 md:flex-none bg-white/20 backdrop-blur-lg border border-white/30 hover:border-white/50 shadow-xl rounded-2xl px-6 py-4 cursor-pointer transition-all duration-300 hover:bg-white/30 text-white font-semibold text-lg">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={importExcel}
+                className="hidden"
+                disabled={loading}
+              />
+              {loading ? 'Carregando...' : 'Importar Excel'}
+            </label>
             <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`px-6 py-3 rounded-2xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl border-2 border-white/30 bg-white/20 backdrop-blur-lg text-white ${
-                activeTab === 'dashboard'
-                  ? 'bg-white/40 ring-4 ring-blue-300/50 shadow-3xl scale-105'
-                  : 'hover:bg-white/30'
-              }`}
+              onClick={exportExcel}
+              className="flex-1 md:flex-none bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 border border-white/30 shadow-xl rounded-2xl px-8 py-4 text-white font-bold text-lg transition-all duration-300 hover:shadow-2xl hover:scale-105"
+              disabled={filteredData.length === 0}
             >
-              📊 Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab('fechamento')}
-              className={`px-6 py-3 rounded-2xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 hover:shadow-2xl border-2 border-white/30 bg-white/20 backdrop-blur-lg text-white ${
-                activeTab === 'fechamento'
-                  ? 'bg-white/40 ring-4 ring-green-300/50 shadow-3xl scale-105'
-                  : 'hover:bg-white/30'
-              }`}
-            >
-              📅 Fechamento Mensal
+              Exportar Excel
             </button>
           </div>
         </div>
-      </header>
 
-      {activeTab === 'dashboard' ? (
-        <div className="space-y-8 max-w-7xl mx-auto">
-          {/* Cards de métricas */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center hover:scale-105 transition-all duration-300">
-              <div className="text-4xl mb-4">💰</div>
-              <h3 className="text-xl font-bold text-white mb-2">Total de Vendas</h3>
-              <p className="text-3xl font-black text-green-400 drop-shadow-lg">
-                R$ {totalSales.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center hover:scale-105 transition-all duration-300">
-              <div className="text-4xl mb-4">📈</div>
-              <h3 className="text-xl font-bold text-white mb-2">Vendas Hoje</h3>
-              <p className="text-3xl font-black text-blue-400 drop-shadow-lg">
-                R$ {todaySales.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center hover:scale-105 transition-all duration-300">
-              <div className="text-4xl mb-4">📊</div>
-              <h3 className="text-xl font-bold text-white mb-2">Ticket Médio</h3>
-              <p className="text-3xl font-black text-purple-400 drop-shadow-lg">
-                R$ {avgSale.toFixed(2).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center hover:scale-105 transition-all duration-300">
-              <div className="text-4xl mb-4">📦</div>
-              <h3 className="text-xl font-bold text-white mb-2">Itens Vendidos</h3>
-              <p className="text-3xl font-black text-yellow-400 drop-shadow-lg">
-                {filteredData.reduce((sum, s) => sum + s.quantity, 0)}
-              </p>
-            </div>
+        {/* Filters */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-6 mb-8">
+          <h3 className="text-2xl font-bold mb-4 text-white drop-shadow-lg">Filtros</h3>
+          <div className="flex flex-col md:flex-row gap-4">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value || '')}
+              className="flex-1 bg-white/20 backdrop-blur-lg border border-white/30 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-white/50 transition-all"
+            >
+              <option value="">Todos os Anos</option>
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value || '')}
+              className="flex-1 bg-white/20 backdrop-blur-lg border border-white/30 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-white/50 transition-all"
+            >
+              <option value="">Todos os Meses</option>
+              {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2024, parseInt(m) - 1, 1).toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          {/* Filtros */}
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8">
-            <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-              🔍 Filtros
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-white/90 mb-2 font-medium">Data Inicial</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-lg border border-white/30 rounded-2xl text-white placeholder-white/70 focus:outline-none focus:ring-4 focus:ring-blue-300/50 transition-all duration-300"
-                />
-              </div>
-              <div>
-                <label className="block text-white/90 mb-2 font-medium">Data Final</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-lg border border-white/30 rounded-2xl text-white placeholder-white/70 focus:outline-none focus:ring-4 focus:ring-blue-300/50 transition-all duration-300"
-                />
-              </div>
-              <div>
-                <label className="block text-white/90 mb-2 font-medium">Categoria</label>
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/20 backdrop-blur-lg border border-white/30 rounded-2xl text-white focus:outline-none focus:ring-4 focus:ring-blue-300/50 transition-all duration-300 appearance-none"
-                >
-                  <option value="">Todas Categorias</option>
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Gráficos */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:scale-[1.02] transition-all duration-300">
-              <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                📈 Vendas ao Longo do Tempo
-              </h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                  <XAxis dataKey="date" stroke="white" />
-                  <YAxis stroke="white" />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="total" stroke="#00C49F" strokeWidth={4} dot={{ fill: '#00C49F', strokeWidth: 2 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:scale-[1.02] transition-all duration-300">
-              <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                🧀 Vendas por Categoria
-              </h3>
-              <ResponsiveContainer width="100%" height={400}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    dataKey="value"
-                    label
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Tabela de Vendas */}
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl overflow-hidden">
-            <div className="p-8 pb-4">
-              <h3 className="text-2xl font-bold text-white flex items-center gap-3">
-                📋 Tabela de Vendas ({filteredData.length} registros)
-              </h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm md:text-base">
-                <thead>
-                  <tr className="bg-white/20 backdrop-blur-sm">
-                    <th className="px-6 py-4 text-left text-white font-bold">Data</th>
-                    <th className="px-6 py-4 text-left text-white font-bold">Produto</th>
-                    <th className="px-6 py-4 text-left text-white font-bold">Categoria</th>
-                    <th className="px-6 py-4 text-left text-white font-bold">Qtd</th>
-                    <th className="px-6 py-4 text-left text-white font-bold">Preço</th>
-                    <th className="px-6 py-4 text-right text-white font-bold">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredData.map((sale) => (
-                    <tr
-                      key={sale.id}
-                      className="border-b border-white/10 hover:bg-white/10 transition-colors duration-200"
-                    >
-                      <td className="px-6 py-4 text-white/90">{sale.date}</td>
-                      <td className="px-6 py-4 text-white/90 font-medium">{sale.product}</td>
-                      <td className="px-6 py-4">
-                        <span className="px-3 py-1 bg-white/20 rounded-full text-xs text-white font-semibold">
-                          {sale.category}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-white/90 font-mono">{sale.quantity}</td>
-                      <td className="px-6 py-4 text-white/90">R$ {sale.price.toFixed(2)}</td>
-                      <td className="px-6 py-4 text-right font-bold text-green-400 text-lg">
-                        R$ {sale.total.toLocaleString('pt-BR')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Importar Excel */}
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-12 text-center hover:scale-105 transition-all duration-300">
-            <h3 className="text-2xl font-bold text-white mb-6 flex items-center justify-center gap-3 mx-auto">
-              📥 Importar Dados do Excel
-            </h3>
-            <p className="text-white/80 mb-8 max-w-md mx-auto">
-              Faça upload de um arquivo .xlsx com colunas: date, product, category, quantity, price
+        {/* Totals */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center">
+            <h4 className="text-lg font-semibold text-white/80 mb-2">Total Receita</h4>
+            <p className="text-4xl font-bold text-green-400 drop-shadow-lg">
+              R$ {totals.revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileUpload}
-              className="block w-full max-w-md mx-auto px-6 py-3 bg-white/20 backdrop-blur-lg border-2 border-dashed border-white/30 rounded-3xl text-white font-semibold cursor-pointer hover:border-white/50 transition-all duration-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600"
-            />
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center">
+            <h4 className="text-lg font-semibold text-white/80 mb-2">Total Despesa</h4>
+            <p className="text-4xl font-bold text-red-400 drop-shadow-lg">
+              R$ {totals.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 text-center">
+            <h4 className="text-lg font-semibold text-white/80 mb-2">Líquido</h4>
+            <p className={`text-4xl font-bold drop-shadow-lg ${totals.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              R$ {totals.net.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
           </div>
         </div>
-      ) : (
-        /* Seção Fechamento Mensal */
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-12 hover:scale-[1.02] transition-all duration-300">
-            {/* Componente FechamentoMensal importado */}
-            <FechamentoMensal />
-            {/* Botão Voltar específico para Fechamento */}
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className="mt-12 w-full md:w-auto px-12 py-4 mx-auto block bg-white/30 backdrop-blur-lg border-2 border-white/30 rounded-3xl font-bold text-xl text-white shadow-2xl hover:scale-105 hover:bg-white/50 hover:shadow-3xl transition-all duration-300 flex items-center gap-3 justify-center"
-            >
-              ⬅️ Voltar ao Dashboard
-            </button>
+
+        {/* Charts Grid 1 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Bar Chart */}
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 h-96">
+            <h3 className="text-2xl font-bold mb-6 text-white drop-shadow-lg">Receita vs Despesa Mensal (Bar)</h3>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: 'white' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: 'white' }} tickLine={false} axisLine={false} />
+                <Tooltip />
+                <Bar dataKey="revenue" fill="#00C49F" name="Receita" />
+                <Bar dataKey="expense" fill="#FF8042" name="Despesa" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Line Chart */}
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 h-96">
+            <h3 className="text-2xl font-bold mb-6 text-white drop-shadow-lg">Tendência Mensal (Line)</h3>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                <XAxis dataKey="month" tick={{ fill: 'white' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: 'white' }} tickLine={false} axisLine={false} />
+                <Tooltip />
+                <Line type="monotone" dataKey="revenue" stroke="#00C49F" strokeWidth={3} name="Receita" />
+                <Line type="monotone" dataKey="expense" stroke="#FF8042" strokeWidth={3} name="Despesa" />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      )}
+
+        {/* Charts Grid 2 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          {/* Pie Chart */}
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 h-96">
+            <h3 className="text-2xl font-bold mb-6 text-white drop-shadow-lg">Distribuição por Categoria (Pie)</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value" nameKey="name">
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Fechamento Mensal */}
+          <FechamentoMensal summary={monthlySummary} />
+        </div>
+
+        {/* Data Table */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8">
+          <h3 className="text-2xl font-bold mb-6 text-white drop-shadow-lg">
+            Tabela de Transações ({filteredData.length})
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-white text-lg">
+              <thead>
+                <tr className="bg-white/20">
+                  <th className="p-4 text-left font-semibold">ID</th>
+                  <th className="p-4 text-left font-semibold">Data</th>
+                  <th className="p-4 text-left font-semibold">Descrição</th>
+                  <th className="p-4 text-left font-semibold">Categoria</th>
+                  <th className="p-4 text-left font-semibold">Valor</th>
+                  <th className="p-4 text-left font-semibold">Tipo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((row) => (
+                  <tr key={row.id} className="hover:bg-white/10 transition-colors">
+                    <td className="p-4">{row.id}</td>
+                    <td className="p-4">{new Date(row.date).toLocaleDateString('pt-BR')}</td>
+                    <td className="p-4">{row.description}</td>
+                    <td className="p-4">{row.category}</td>
+                    <td className={`p-4 font-semibold ${row.type === 'revenue' ? 'text-green-400' : 'text-red-400'}`}>
+                      R$ {row.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className={`p-4 font-semibold ${row.type === 'revenue' ? 'text-green-400' : 'text-red-400'}`}>
+                      {row.type === 'revenue' ? 'Receita' : 'Despesa'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
