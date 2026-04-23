@@ -1,173 +1,275 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-
-type DailyRecord = {
-  data: string;
-  ligacoes: number;
-  orcamentos: number;
-  negocios: number;
-  valor: number;
-  observacoes: string;
-  dataHora: string;
-};
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 type FormDataType = {
-  ligacoes: number;
-  orcamentos: number;
-  negocios: number;
-  valor: number;
-  observacoes: string;
+  produto: string;
+  regiao: string;
+  vendedor: string;
+  material: string;
+  volume: string;
+  valor: string;
 };
 
-type Last7Data = {
+type Sale = {
+  id: string;
   date: string;
-  ligacoes: number;
+  produto: string;
+  regiao: string;
+  vendedor: string;
+  material: string;
+  volume: number;
   valor: number;
+};
+
+const glassInput = "w-full p-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 transition-all duration-300 text-lg shadow-xl";
+const glassCard = "bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 hover:shadow-3xl transition-all duration-300";
+const glassTable = "bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl overflow-hidden";
+
+const KpiCard = ({
+  title,
+  value,
+  gradientClass,
+  icon
+}: {
+  title: string;
+  value: string;
+  gradientClass: string;
+  icon: string;
+}) => (
+  <div className={`${glassCard} text-center group hover:scale-[1.02]`}>
+    <span className="text-4xl mb-4 block select-none">{icon}</span>
+    <h3 className={`text-3xl font-black ${gradientClass} bg-gradient-to-r bg-clip-text text-transparent mb-2 drop-shadow-lg`}>
+      {value}
+    </h3>
+    <p className="text-gray-400 text-sm uppercase tracking-wide font-medium">
+      {title}
+    </p>
+  </div>
+);
+
+const LineChart = ({ data }: { data: { date: string; valor: number }[] }) => {
+  if (data.length === 0) return <div className="h-64 flex items-center justify-center text-gray-400">Sem dados</div>;
+
+  const maxVal = Math.max(...data.map((d) => d.valor));
+  const step = 400 / (data.length - 1);
+  const points = data
+    .map((d, i) => {
+      const x = i * step;
+      const y = 200 - (d.valor / maxVal) * 180;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+
+  return (
+    <div className="h-64 flex flex-col">
+      <svg viewBox="0 0 400 200" className="flex-1 w-full">
+        <defs>
+          <linearGradient id="lineGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+            <stop offset="0%" stopColor="rgba(34, 211, 238, 0.4)" />
+            <stop offset="100%" stopColor="rgba(34, 211, 238, 0)" />
+          </linearGradient>
+        </defs>
+        <path
+          d={`M 0 200 L ${points} L 400 200 Z`}
+          fill="url(#lineGrad)"
+          stroke="#22d3ee"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {data.map((d, i) => {
+          const x = i * step;
+          const y = 200 - (d.valor / maxVal) * 180;
+          return (
+            <circle key={i} cx={x} cy={y} r="5" fill="#22d3ee" stroke="white" strokeWidth="1" />
+          );
+        })}
+      </svg>
+      <div className="grid grid-cols-7 gap-1 px-4 py-2 text-xs text-gray-400 font-mono">
+        {data.map((d) => (
+          <span key={d.date}>{d.date.slice(5, 10)}</span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const BarChart = ({ data }: { data: { material: string; volume: number }[] }) => {
+  if (data.length === 0) return <div className="h-64 flex items-center justify-center text-gray-400">Sem dados</div>;
+
+  const maxVol = Math.max(...data.map((d) => d.volume));
+
+  return (
+    <div className="h-64 flex flex-col">
+      <div className="flex-1 flex gap-3 p-6">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center gap-2">
+            <div
+              className="w-full bg-gradient-to-t from-orange-400 via-amber-400 to-orange-500 rounded-2xl shadow-lg transition-all duration-500 origin-bottom"
+              style={{ height: `${Math.max((d.volume / maxVol) * 180, 10)}px` }}
+            />
+            <span className="text-xs text-gray-300 font-mono text-center min-h-[2rem] flex items-center">
+              {d.material.length > 12 ? d.material.slice(0, 12) + '...' : d.material}
+            </span>
+            <span className="text-xs text-orange-400 font-bold">
+              {d.volume.toFixed(1)}kg
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 export default function DiarioPage() {
-  const [records, setRecords] = useState<DailyRecord[]>([]);
-  const [currentDate, setCurrentDate] = useState<string>('');
+  const router = useRouter();
+  const [sales, setSales] = useState<Sale[]>([]);
   const [formData, setFormData] = useState<FormDataType>({
-    ligacoes: 0,
-    orcamentos: 0,
-    negocios: 0,
-    valor: 0,
-    observacoes: '',
+    produto: '',
+    regiao: '',
+    vendedor: '',
+    material: '',
+    volume: '0',
+    valor: '0',
   });
-  const [currentPage, setCurrentPage] = useState<number>(1);
-
-  const glassInput = "w-full px-5 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl text-white placeholder-gray-400 focus:outline-none focus:ring-4 focus:ring-cyan-400/50 focus:border-transparent shadow-2xl hover:shadow-3xl transition-all duration-300 text-lg font-mono tracking-wide";
-  const glassButton = "px-6 py-3 bg-white/20 backdrop-blur-xl border border-white/20 rounded-2xl text-gray-100 hover:bg-white/30 hover:shadow-2xl hover:scale-105 transition-all duration-300 font-semibold shadow-xl";
-
-  const formatCurrency = (value: number): string =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-
-  const formatTaxa = (negocios: number, ligacoes: number): string =>
-    ligacoes > 0 ? ((negocios / ligacoes) * 100).toFixed(1) + '%' : '0%';
-
-  const taxa = formatTaxa(formData.negocios, formData.ligacoes);
-
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    setCurrentDate(today);
-  }, []);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [feedback, setFeedback] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('dailyRecords');
+      const stored = localStorage.getItem('dailySales');
       if (stored) {
-        setRecords(JSON.parse(stored));
+        setSales(JSON.parse(stored));
       }
     }
   }, []);
 
   useEffect(() => {
-    const rec = records.find((r) => r.data === currentDate);
-    const defaults = { ligacoes: 0, orcamentos: 0, negocios: 0, valor: 0, observacoes: '' };
-    setFormData(rec ? {
-      ligacoes: rec.ligacoes,
-      orcamentos: rec.orcamentos,
-      negocios: rec.negocios,
-      valor: rec.valor,
-      observacoes: rec.observacoes,
-    } : defaults);
-  }, [currentDate, records]);
-
-  const last7Data = useMemo((): Last7Data[] => {
-    const data: Last7Data[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0];
-      const rec = records.find((r) => r.data === dateStr);
-      data.push({
-        date: dateStr,
-        ligacoes: rec?.ligacoes || 0,
-        valor: rec?.valor || 0,
-      });
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dailySales', JSON.stringify(sales));
     }
-    return data;
-  }, [records]);
+  }, [sales]);
 
-  const maxLigacoes = Math.max(...last7Data.map((d) => d.ligacoes), 1);
-  const maxValor = Math.max(...last7Data.map((d) => d.valor), 1);
+  const dailySales = sales.filter((s) => s.date === selectedDate);
+  const totalValor = dailySales.reduce((sum, s) => sum + s.valor, 0);
+  const totalVolume = dailySales.reduce((sum, s) => sum + s.volume, 0);
+  const qtd = dailySales.length;
+  const ticketMedio = qtd > 0 ? totalValor / qtd : 0;
+  const maiorVenda = Math.max(...dailySales.map((s) => s.valor), 0);
 
-  const linePoints = last7Data
-    .map((d, i) => {
-      const x = (i / 6) * 95 + 7.5;
-      const scaleY = (d.ligacoes / maxLigacoes) * 45;
-      const y = 55 - scaleY;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+  const today = new Date();
+  const last7Days: { date: string; valor: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayTotal = sales.filter((s) => s.date === dateStr).reduce((sum, s) => sum + s.valor, 0);
+    last7Days.push({ date: dateStr, valor: dayTotal });
+  }
 
-  const recentRecords = useMemo(() => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    return records
-      .filter((r) => new Date(r.data) >= thirtyDaysAgo)
-      .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-  }, [records]);
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const recentSales = sales.filter((s) => new Date(s.date) >= thirtyDaysAgo);
+  const matVolumes: Record<string, number> = {};
+  recentSales.forEach((s) => {
+    matVolumes[s.material] = (matVolumes[s.material] || 0) + s.volume;
+  });
+  const topMats = Object.entries(matVolumes)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([material, volume]) => ({ material, volume }));
 
-  const totalPages = Math.ceil(recentRecords.length / 10);
-  const paginatedRecords = recentRecords.slice((currentPage - 1) * 10, currentPage * 10);
+  const tableSales = sales
+    .filter((s) => new Date(s.date) >= thirtyDaysAgo)
+    .sort((a, b) => {
+      const timeA = new Date(a.date).getTime();
+      const timeB = new Date(b.date).getTime();
+      return sortDir === 'desc' ? timeB - timeA : timeA - timeB;
+    });
+  const pageSize = 10;
+  const totalPages = Math.ceil(tableSales.length / pageSize);
+  const paginatedSales = tableSales.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const handleSave = () => {
-    if (formData.ligacoes < 0 || formData.orcamentos < 0 || formData.negocios < 0 || formData.valor < 0) {
-      alert('Os valores não podem ser negativos!');
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const numVolume = Number(formData.volume);
+    const numValor = Number(formData.valor);
+    const required = ['produto', 'regiao', 'vendedor', 'material'];
+    if (
+      required.some((f) => !formData[f].trim()) ||
+      numVolume <= 0 ||
+      numValor <= 0 ||
+      isNaN(numVolume) ||
+      isNaN(numValor)
+    ) {
+      setFeedback('Preencha todos os campos obrigatórios corretamente (valores > 0).');
+      setTimeout(() => setFeedback(''), 5000);
       return;
     }
-    const newRecord: DailyRecord = {
-      data: currentDate,
-      ligacoes: formData.ligacoes,
-      orcamentos: formData.orcamentos,
-      negocios: formData.negocios,
-      valor: formData.valor,
-      observacoes: formData.observacoes,
-      dataHora: new Date().toISOString(),
+
+    const newSale: Sale = {
+      id: crypto.randomUUID(),
+      date: selectedDate,
+      produto: formData.produto.trim(),
+      regiao: formData.regiao.trim(),
+      vendedor: formData.vendedor.trim(),
+      material: formData.material.trim(),
+      volume: numVolume,
+      valor: numValor,
     };
-    const existingIdx = records.findIndex((r) => r.data === currentDate);
-    let newRecords: DailyRecord[];
-    if (existingIdx >= 0) {
-      newRecords = [...records];
-      newRecords[existingIdx] = newRecord;
-    } else {
-      newRecords = [...records, newRecord];
-    }
-    setRecords(newRecords);
-    localStorage.setItem('dailyRecords', JSON.stringify(newRecords));
+    setSales((prev) => [...prev, newSale]);
+    setFormData({ produto: '', regiao: '', vendedor: '', material: '', volume: '0', valor: '0' });
+    setFeedback('Venda registrada com sucesso!');
+    setTimeout(() => setFeedback(''), 3000);
   };
 
-  const handleDelete = (date: string) => {
-    if (!confirm(`Deseja realmente deletar o registro de ${date}?`)) return;
-    const newRecords = records.filter((r) => r.data !== date);
-    setRecords(newRecords);
-    localStorage.setItem('dailyRecords', JSON.stringify(newRecords));
-    if (date === currentDate) {
-      setFormData({ ligacoes: 0, orcamentos: 0, negocios: 0, valor: 0, observacoes: '' });
+  const handleDelete = (id: string) => {
+    if (!confirm('Confirma a exclusão desta venda?')) return;
+    setSales((prev) => prev.filter((s) => s.id !== id));
+    if (currentPage > Math.ceil((tableSales.length - 1) / pageSize)) {
+      setCurrentPage(Math.max(1, totalPages - 1));
     }
-    if (paginatedRecords.length <= 1 && currentPage > 1) {
-      setCurrentPage(1);
-    }
+    setFeedback('Venda deletada com sucesso!');
+    setTimeout(() => setFeedback(''), 3000);
   };
 
-  const exportToExcel = () => {
-    const csvHeader = 'Data,Ligações,Orçamentos,Negócios,Valor,Taxa de Conversão,Observações\n';
-    const csvRows = records
-      .map((r) => {
-        const taxaVal = formatTaxa(r.negocios, r.ligacoes).replace('%', '').replace(',', '.');
-        return `${r.data},${r.ligacoes},${r.orcamentos},${r.negocios},${r.valor},${taxaVal},${r.observacoes.replace(/,/g, ';')}`;
-      })
-      .join('\n');
-    const csvContent = csvHeader + csvRows;
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const toggleSort = () => {
+    setSortDir((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+    setCurrentPage(1);
+  };
+
+  const exportCSV = () => {
+    const headers = ['Data', 'Produto', 'Região', 'Vendedor', 'Material', 'Volume (kg)', 'Valor (R$)'];
+    const csvContent = [
+      headers.join(','),
+      ...tableSales.map(
+        (s) =>
+          [
+            s.date,
+            s.produto,
+            s.regiao,
+            s.vendedor,
+            s.material,
+            s.volume.toFixed(2),
+            s.valor.toFixed(2),
+          ].join(','),
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `fechamento-diario-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `vendas_ultimos_30_dias_${new Date().toISOString().slice(0, 10)}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -175,350 +277,281 @@ export default function DiarioPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900/30 to-purple-900/50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className="bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-500 bg-clip-text text-transparent text-5xl md:text-7xl font-black drop-shadow-2xl mb-6 animate-pulse">
-            📋 Fechamento Diário
-          </h1>
-          <p className="text-xl md:text-2xl text-gray-200 font-light max-w-3xl mx-auto leading-relaxed">
-            Registre suas atividades diárias e acompanhe o progresso
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-900/30 to-gray-900 p-4 sm:p-8 lg:p-12 text-gray-100 overflow-x-hidden">
+      {/* Header */}
+      <div className="text-center mb-12 max-w-4xl mx-auto">
+        <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 bg-clip-text text-transparent mb-6 drop-shadow-2xl leading-tight">
+          Fechamento Diário
+        </h1>
+        <p className="text-lg sm:text-xl md:text-2xl text-gray-300/90 max-w-2xl mx-auto leading-relaxed backdrop-blur-sm">
+          Registre e Acompanhe as Vendas do Dia
+        </p>
+      </div>
 
-        {/* Date Selector */}
-        <div className="max-w-md mx-auto mb-16">
-          <label className="block text-center text-2xl font-bold text-gray-100 mb-6 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-lg">
-            📅 Selecione a Data
-          </label>
-          <input
-            type="date"
-            value={currentDate}
-            onChange={(e) => setCurrentDate(e.target.value)}
-            className={`${glassInput} text-2xl text-center py-6 px-8 rounded-3xl shadow-3xl border-2 border-white/30 hover:border-cyan-400/50 focus:border-emerald-400/50`}
-          />
+      {/* Feedback */}
+      {feedback && (
+        <div
+          className={`mx-auto mb-8 max-w-2xl p-6 rounded-3xl text-white font-semibold shadow-2xl transform transition-all duration-300 ${
+            feedback.includes('sucesso') || feedback.includes('registrada') || feedback.includes('deletada')
+              ? 'bg-emerald-500/20 border-2 border-emerald-400/40'
+              : 'bg-red-500/20 border-2 border-red-400/40'
+          }`}
+        >
+          {feedback}
+        </div>
+      )}
+
+      {/* Date Selector + Form + KPIs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+        {/* Form */}
+        <div className={`${glassCard} col-span-1`}>
+          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent drop-shadow-lg">
+            Registrar Nova Venda
+          </h2>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Data *</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className={glassInput}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Produto *</label>
+              <input
+                name="produto"
+                placeholder="Nome do produto"
+                value={formData.produto}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Região *</label>
+              <input
+                name="regiao"
+                placeholder="Região de venda"
+                value={formData.regiao}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Vendedor *</label>
+              <input
+                name="vendedor"
+                placeholder="Nome do vendedor"
+                value={formData.vendedor}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Material *</label>
+              <input
+                name="material"
+                placeholder="Tipo de material"
+                value={formData.material}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Volume (kg) *</label>
+              <input
+                name="volume"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={formData.volume}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-2 ml-1">Valor (R$) *</label>
+              <input
+                name="valor"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0.00"
+                value={formData.valor}
+                onChange={handleFormChange}
+                className={glassInput}
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              className="md:col-span-2 mt-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 hover:from-cyan-400 hover:via-blue-400 hover:to-indigo-400 text-white font-bold py-4 px-8 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 text-xl backdrop-blur-sm border border-cyan-400/30 hover:scale-[1.02]"
+            >
+              Registrar Venda
+            </button>
+          </form>
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-20">
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-blue-400/30 shadow-2xl shadow-blue-500/40 hover:shadow-blue-500/60 hover:scale-105 transition-all duration-300 text-center">
-            <div className="text-6xl md:text-8xl mb-6 drop-shadow-2xl">📞</div>
-            <h3 className="text-xl md:text-2xl font-bold text-gray-100 mb-4">Ligações Realizadas</h3>
-            <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-blue-300 via-cyan-300 to-blue-400 bg-clip-text text-transparent drop-shadow-2xl">
-              {formData.ligacoes}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-purple-400/30 shadow-2xl shadow-purple-500/40 hover:shadow-purple-500/60 hover:scale-105 transition-all duration-300 text-center">
-            <div className="text-6xl md:text-8xl mb-6 drop-shadow-2xl">📧</div>
-            <h3 className="text-xl md:text-2xl font-bold text-gray-100 mb-4">Orçamentos Enviados</h3>
-            <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-purple-300 to-purple-400 bg-clip-text text-transparent drop-shadow-2xl">
-              {formData.orcamentos}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-emerald-400/30 shadow-2xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-105 transition-all duration-300 text-center">
-            <div className="text-6xl md:text-8xl mb-6 drop-shadow-2xl">✅</div>
-            <h3 className="text-xl md:text-2xl font-bold text-gray-100 mb-4">Negócios Fechados</h3>
-            <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-emerald-300 to-emerald-400 bg-clip-text text-transparent drop-shadow-2xl">
-              {formData.negocios}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-amber-400/30 shadow-2xl shadow-amber-500/40 hover:shadow-amber-500/60 hover:scale-105 transition-all duration-300 text-center">
-            <div className="text-6xl md:text-8xl mb-6 drop-shadow-2xl">💵</div>
-            <h3 className="text-xl md:text-2xl font-bold text-gray-100 mb-4">Valor Fechado</h3>
-            <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-amber-300 to-amber-400 bg-clip-text text-transparent drop-shadow-2xl">
-              {formatCurrency(formData.valor)}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-pink-400/30 shadow-2xl shadow-pink-500/40 hover:shadow-pink-500/60 hover:scale-105 transition-all duration-300 text-center">
-            <div className="text-6xl md:text-8xl mb-6 drop-shadow-2xl">📊</div>
-            <h3 className="text-xl md:text-2xl font-bold text-gray-100 mb-4">Taxa de Conversão</h3>
-            <div className="text-5xl md:text-7xl font-black bg-gradient-to-r from-pink-300 to-rose-400 bg-clip-text text-transparent drop-shadow-2xl">
-              {taxa}
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 col-span-1 lg:col-span-1">
+          <KpiCard
+            title="Total de Vendas"
+            value={`R$ ${totalValor.toLocaleString('pt-BR')}`}
+            gradientClass="from-cyan-400 to-blue-500"
+            icon="💰"
+          />
+          <KpiCard
+            title="Volume Total"
+            value={`${totalVolume.toFixed(1)} kg`}
+            gradientClass="from-emerald-400 to-teal-500"
+            icon="📦"
+          />
+          <KpiCard
+            title="Quantidade"
+            value={qtd.toString()}
+            gradientClass="from-orange-400 to-amber-500"
+            icon="🛒"
+          />
+          <KpiCard
+            title="Ticket Médio"
+            value={`R$ ${ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            gradientClass="from-violet-400 to-purple-500"
+            icon="💳"
+          />
+          <KpiCard
+            title="Maior Venda"
+            value={`R$ ${maiorVenda.toLocaleString('pt-BR')}`}
+            gradientClass="from-rose-400 to-pink-500"
+            icon="🏆"
+          />
+        </div>
+      </div>
+
+      {/* Graphs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+        <div className={`${glassCard}`}>
+          <h3 className="text-2xl font-bold mb-6 text-cyan-400 drop-shadow-lg">Últimas 7 Dias - Total Vendas (R$)</h3>
+          <LineChart data={last7Days} />
+        </div>
+        <div className={`${glassCard}`}>
+          <h3 className="text-2xl font-bold mb-6 text-orange-400 drop-shadow-lg">Top 5 Materiais - Volume (kg)</h3>
+          <BarChart data={topMats} />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="mb-12">
+        <div className={`${glassTable} max-h-[600px] overflow-auto`}>
+          <table className="w-full table-auto">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th
+                  className="sticky top-0 z-20 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100 cursor-pointer hover:bg-white/30 transition-all pr-2"
+                  onClick={toggleSort}
+                >
+                  Data {sortDir === 'desc' ? '↓' : '↑'}
+                </th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Produto</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Região</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Vendedor</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Material</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Volume (kg)</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100">Valor (R$)</th>
+                <th className="sticky top-0 z-10 bg-white/20 backdrop-blur-xl px-6 py-4 text-left font-bold text-gray-100 w-32">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedSales.map((sale) => (
+                <tr key={sale.id} className="border-b border-white/5 hover:bg-white/10 transition-all">
+                  <td className="px-6 py-4 font-medium text-gray-200">
+                    {new Date(sale.date).toLocaleDateString('pt-BR')}
+                  </td>
+                  <td className="px-6 py-4 text-gray-300 max-w-[12rem] truncate">{sale.produto}</td>
+                  <td className="px-6 py-4 text-gray-300">{sale.regiao}</td>
+                  <td className="px-6 py-4 text-gray-300">{sale.vendedor}</td>
+                  <td className="px-6 py-4 text-gray-300">{sale.material}</td>
+                  <td className="px-6 py-4 text-emerald-400 font-mono">{sale.volume.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-cyan-400 font-mono">R$ {sale.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => handleDelete(sale.id)}
+                      className="bg-red-500/90 hover:bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200 backdrop-blur-sm border border-red-400/30"
+                    >
+                      Deletar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {paginatedSales.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500 font-medium">
+                    Nenhuma venda nos últimos 30 dias.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
 
-        {/* Form */}
-        <div className="bg-white/10 backdrop-blur-3xl border border-white/20 shadow-3xl rounded-4xl p-8 md:p-12 mb-20">
-          <h2 className="text-4xl md:text-5xl font-black text-center mb-12 bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400 bg-clip-text text-transparent drop-shadow-2xl">
-            ✏️ Registro Diário
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <label className="block mb-3 text-lg font-semibold text-gray-200">
-                Ligações Realizadas <span className="text-red-400 text-lg">*</span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={formData.ligacoes}
-                onChange={(e) => setFormData({ ...formData, ligacoes: parseInt(e.target.value) || 0 })}
-                className={glassInput}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label className="block mb-3 text-lg font-semibold text-gray-200">
-                Orçamentos Enviados <span className="text-red-400 text-lg">*</span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={formData.orcamentos}
-                onChange={(e) => setFormData({ ...formData, orcamentos: parseInt(e.target.value) || 0 })}
-                className={glassInput}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label className="block mb-3 text-lg font-semibold text-gray-200">
-                Negócios Fechados <span className="text-red-400 text-lg">*</span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={formData.negocios}
-                onChange={(e) => setFormData({ ...formData, negocios: parseInt(e.target.value) || 0 })}
-                className={glassInput}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label className="block mb-3 text-lg font-semibold text-gray-200">
-                Valor Fechado <span className="text-red-400 text-lg">*</span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.valor}
-                onChange={(e) => setFormData({ ...formData, valor: parseFloat(e.target.value) || 0 })}
-                className={glassInput}
-                placeholder="0.00"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block mb-3 text-lg font-semibold text-gray-200">Observações</label>
-              <textarea
-                rows={5}
-                value={formData.observacoes}
-                onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                className={`${glassInput} resize-vertical min-h-[120px] text-base`}
-                placeholder="Notas adicionais..."
-              />
-            </div>
-          </div>
-          <div className="flex justify-center mt-12">
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap justify-center items-center gap-2 mt-8">
             <button
-              type="button"
-              onClick={handleSave}
-              className="bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-600 hover:via-teal-600 hover:to-emerald-700 text-white font-black py-6 px-12 rounded-3xl shadow-2xl hover:shadow-emerald-500/60 hover:scale-110 transition-all duration-300 text-2xl shadow-emerald-500/50"
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl text-gray-300 hover:bg-white/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all disabled:hover:bg-transparent"
             >
-              💾 Salvar Registro
+              Anterior
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              const pageNum = currentPage > 3 ? currentPage - 3 + i : i + 1;
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`px-4 py-2 rounded-xl font-semibold transition-all ${
+                    currentPage === pageNum
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-xl'
+                      : 'bg-white/10 backdrop-blur-xl border border-white/20 text-gray-300 hover:bg-white/20 hover:text-white'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl text-gray-300 hover:bg-white/20 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all disabled:hover:bg-transparent"
+            >
+              Próxima
             </button>
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
-          {/* Line Chart */}
-          <div className="bg-white/10 backdrop-blur-3xl border border-white/20 shadow-3xl rounded-4xl p-8 md:p-12 overflow-hidden">
-            <h3 className="text-3xl md:text-4xl font-black text-center mb-10 bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-500 bg-clip-text text-transparent drop-shadow-2xl">
-              📈 Evolução de Ligações (Últimos 7 dias)
-            </h3>
-            <svg viewBox="0 0 100 60" className="w-full h-72 md:h-80 mx-auto">
-              <defs>
-                <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#3b82f6" />
-                  <stop offset="50%" stopColor="#06b6d4" />
-                  <stop offset="100%" stopColor="#10b981" />
-                </linearGradient>
-              </defs>
-              <polyline
-                points={linePoints}
-                fill="none"
-                stroke="url(#lineGrad)"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              {last7Data.map((d, i) => (
-                <text
-                  key={i}
-                  x={((i / 6) * 95 + 7.5).toFixed(1)}
-                  y="57"
-                  textAnchor="middle"
-                  fontSize="3.5"
-                  fill="#9ca3af"
-                  transform={`rotate(-45 ${((i / 6) * 95 + 7.5).toFixed(1)} 57)`}
-                >
-                  {d.date.slice(5, 10)}
-                </text>
-              ))}
-              <text x="5" y="53" fontSize="4" fill="#9ca3af">0</text>
-              <text x="5" y="12" fontSize="4" fill="#60a5fa">{maxLigacoes}</text>
-            </svg>
-          </div>
-
-          {/* Bar Chart */}
-          <div className="bg-white/10 backdrop-blur-3xl border border-white/20 shadow-3xl rounded-4xl p-8 md:p-12 overflow-hidden">
-            <h3 className="text-3xl md:text-4xl font-black text-center mb-10 bg-gradient-to-r from-amber-400 via-yellow-400 to-orange-500 bg-clip-text text-transparent drop-shadow-2xl">
-              💰 Valor Fechado (Últimos 7 dias)
-            </h3>
-            <svg viewBox="0 0 100 60" className="w-full h-72 md:h-80 mx-auto">
-              <defs>
-                <linearGradient id="barGrad" x1="0%" y1="100%" x2="0%" y2="0%">
-                  <stop offset="0%" stopColor="#eab308" />
-                  <stop offset="100%" stopColor="#ca8a04" />
-                </linearGradient>
-              </defs>
-              {last7Data.map((d, i) => {
-                const x = (i / 6) * 95 + 2.5;
-                const barWidth = 95 / 7 - 0.5;
-                const height = Math.max((d.valor / maxValor) * 45, 2);
-                return (
-                  <g key={i} transform={`translate(0,0)`}>
-                    <rect
-                      x={x.toFixed(1)}
-                      y={(60 - height).toFixed(1)}
-                      width={barWidth.toFixed(1)}
-                      height={height.toFixed(1)}
-                      rx="3"
-                      fill="url(#barGrad)"
-                    />
-                    <text
-                      x={x + barWidth / 2}
-                      y="59"
-                      textAnchor="middle"
-                      fontSize="3.5"
-                      fill="#9ca3af"
-                      transform={`rotate(-45 ${x + barWidth / 2} 59)`}
-                    >
-                      {d.date.slice(5, 10)}
-                    </text>
-                  </g>
-                );
-              })}
-              <text x="5" y="53" fontSize="4" fill="#9ca3af">R$0</text>
-              <text x="5" y="12" fontSize="4" fill="#f59e0b">R${maxValor.toLocaleString()}</text>
-            </svg>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white/5 backdrop-blur-3xl border border-white/10 shadow-3xl rounded-4xl overflow-hidden mb-20">
-          <div className="p-8 border-b border-white/10 bg-white/5 backdrop-blur-xl">
-            <h3 className="text-4xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-500 bg-clip-text text-transparent drop-shadow-2xl">
-              📊 Histórico dos Últimos 30 Dias
-            </h3>
-          </div>
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            <table className="w-full divide-y divide-white/5">
-              <thead className="sticky top-0 bg-white/20 backdrop-blur-xl z-10">
-                <tr>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Data</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Ligações</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Orçamentos</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Negócios</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Valor</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Taxa Conv.</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Observações</th>
-                  <th className="px-6 py-5 text-left text-xs font-bold text-white uppercase tracking-wider">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 bg-white/5">
-                {paginatedRecords.map((r) => (
-                  <tr
-                    key={r.data}
-                    className="hover:bg-white/20 transition-all duration-300 cursor-pointer"
-                    onClick={(e) => {
-                      if ((e.target as Element).tagName !== 'BUTTON') {
-                        setCurrentDate(r.data);
-                      }
-                    }}
-                  >
-                    <td className="px-6 py-6 font-bold text-gray-100 text-lg">{r.data}</td>
-                    <td className="px-6 py-6 text-gray-200 font-mono">{r.ligacoes}</td>
-                    <td className="px-6 py-6 text-gray-200 font-mono">{r.orcamentos}</td>
-                    <td className="px-6 py-6 font-bold text-emerald-400 text-lg font-mono">{r.negocios}</td>
-                    <td className="px-6 py-6 font-mono text-amber-400">{formatCurrency(r.valor)}</td>
-                    <td className="px-6 py-6 font-mono text-pink-400 text-lg">{formatTaxa(r.negocios, r.ligacoes)}</td>
-                    <td className="px-6 py-6 max-w-xs truncate text-gray-300" title={r.observacoes || 'Sem observações'}>
-                      {r.observacoes || '-'}
-                    </td>
-                    <td className="px-6 py-6">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(r.data);
-                        }}
-                        className="bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 text-red-300 hover:text-red-200 px-5 py-2 rounded-2xl font-bold transition-all duration-300 hover:scale-105 shadow-lg shadow-red-500/30"
-                      >
-                        🗑️ Deletar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {paginatedRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400 text-xl">
-                      Nenhum registro nos últimos 30 dias.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {totalPages > 1 && (
-            <div className="bg-white/10 backdrop-blur-xl border-t border-white/10 p-6">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
-                <div className="text-gray-300 font-mono">
-                  Mostrando {(currentPage - 1) * 10 + 1} a {Math.min(currentPage * 10, recentRecords.length)} de{' '}
-                  {recentRecords.length} registros
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className={`${glassButton} ${currentPage === 1 ? 'opacity-50 cursor-not-allowed shadow-none hover:scale-100' : ''}`}
-                  >
-                    ← Anterior
-                  </button>
-                  <span className="px-6 py-3 bg-white/20 backdrop-blur border border-white/20 rounded-2xl font-bold text-gray-100 font-mono">
-                    Página {currentPage} de {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className={`${glassButton} ${currentPage === totalPages ? 'opacity-50 cursor-not-allowed shadow-none hover:scale-100' : ''}`}
-                  >
-                    Próxima →
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bottom Actions */}
-        <div className="flex flex-col lg:flex-row gap-8 justify-center lg:justify-between items-center pt-16 border-t-4 border-white/10 pb-12">
-          <Link
-            href="/"
-            className={`${glassButton} text-xl md:text-2xl px-8 md:px-12 py-5 md:py-6 rounded-3xl shadow-2xl hover:shadow-3xl border-2 border-white/30 font-bold bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30`}
-          >
-            ← Voltar para Visão Geral
-          </Link>
-          <button
-            onClick={exportToExcel}
-            className="bg-gradient-to-r from-green-500 via-emerald-500 to-teal-600 hover:from-green-600 hover:via-emerald-600 hover:to-teal-700 text-white font-black py-5 px-12 rounded-3xl shadow-2xl hover:shadow-green-500/60 hover:scale-110 transition-all duration-300 text-xl shadow-green-500/50 border border-green-400/30"
-          >
-            📥 Exportar Histórico (Excel)
-          </button>
-        </div>
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row gap-6 justify-center pt-12 pb-12">
+        <button
+          onClick={exportCSV}
+          className="flex-1 max-w-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white font-bold py-4 px-8 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 text-lg backdrop-blur-sm border border-emerald-400/30 hover:scale-[1.02]"
+        >
+          📊 Exportar Últimas 30 Dias (CSV)
+        </button>
+        <button
+          onClick={() => router.back()}
+          className="flex-1 max-w-sm bg-gradient-to-r from-slate-600 to-gray-700 hover:from-slate-500 hover:to-gray-600 text-white font-bold py-4 px-8 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 text-lg backdrop-blur-sm border border-slate-400/30 hover:scale-[1.02]"
+        >
+          ← Voltar para Visão Geral
+        </button>
       </div>
     </div>
   );
