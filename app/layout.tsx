@@ -1,18 +1,19 @@
-import './globals.css'
+import type { Metadata } from "next";
+import "./globals.css";
 
-export const metadata = {
-  title: 'Metalfama Dashboard',
-  description: 'Gestão de Faturamento Comercial',
-}
+export const metadata: Metadata = {
+  title: "Dashboard Metalfama - Comercial",
+  description: "Dashboard de análise comercial para a Metalfama",
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-br">
-      <body>{children}</body>
+    <html lang="pt-BR">
+      <body className="antialiased">{children}</body>
     </html>
-  )
+  );
 }
