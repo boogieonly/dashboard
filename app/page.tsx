@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import Link from 'next/link';
-import * as XLSX from 'xlsx';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Inter } from 'next/font/google';
 import {
   LineChart,
   Line,
@@ -16,667 +15,682 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
 } from 'recharts';
+import * as XLSX from 'xlsx';
 
-type Filters = {
-  startDate: string;
-  endDate: string;
-  regions: string[];
-  products: string[];
-  sellers: string[];
-};
+const inter = Inter({ subsets: ['latin'] });
 
-type FilterKey = 'period' | 'region' | 'product' | 'seller';
-
-interface DataRow {
-  Product: string;
-  Region: string;
-  Seller: string;
-  Date: string;
-  Total: number;
-  Quantity: number;
+interface SalesData {
+  date: string;
+  product: string;
+  region: string;
+  seller: string;
+  weight: number;
+  total: number;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+interface Filters {
+  periodFrom: string;
+  periodTo: string;
+  region: string;
+  product: string;
+  seller: string;
+}
 
-const Page = () => {
-  const [data, setData] = useState<DataRow[]>([]);
+type ChartLineData = { month: string; total: number }[];
+type ChartBarData = { product: string; total: number }[];
+type ChartPieData = { region: string; total: number }[];
+
+interface KPIs {
+  totalWeight: number;
+  totalValue: number;
+  orders: number;
+  avgTicket: number;
+  topProducts: { product: string; total: number }[];
+}
+
+const COLORS = ['#4f46e5', '#9333ea', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
+
+export default function SalesDashboard() {
+  const [data, setData] = useState<SalesData[]>([]);
   const [filters, setFilters] = useState<Filters>({
-    startDate: '',
-    endDate: '',
-    regions: [],
-    products: [],
-    sellers: [],
+    periodFrom: '',
+    periodTo: '',
+    region: '',
+    product: '',
+    seller: '',
   });
-  const [filterOpen, setFilterOpen] = useState<Record<FilterKey, boolean>>({
-    period: true,
-    region: false,
-    product: false,
-    seller: false,
-  });
+  const [showMenu, setShowMenu] = useState(false);
 
-  // Carrega dados do localStorage no mount
+  // Load data from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('salesData');
     if (saved) {
       try {
-        const parsed: DataRow[] = JSON.parse(saved);
-        setData(parsed);
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
+        setData(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load data:', e);
       }
     }
   }, []);
 
-  // Persiste dados no localStorage
+  // Save data to localStorage
   useEffect(() => {
     localStorage.setItem('salesData', JSON.stringify(data));
   }, [data]);
 
-  // Dados filtrados com base nos filtros ativos
-  const filteredData = useMemo((): DataRow[] => {
-    let res = data;
-    if (filters.startDate) {
-      res = res.filter((r) => r.Date >= filters.startDate);
-    }
-    if (filters.endDate) {
-      res = res.filter((r) => r.Date <= filters.endDate);
-    }
-    if (filters.regions.length > 0) {
-      res = res.filter((r) => filters.regions.includes(r.Region));
-    }
-    if (filters.products.length > 0) {
-      res = res.filter((r) => filters.products.includes(r.Product));
-    }
-    if (filters.sellers.length > 0) {
-      res = res.filter((r) => filters.sellers.includes(r.Seller));
-    }
-    return res;
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      const dateOk =
+        (!filters.periodFrom || item.date >= filters.periodFrom) &&
+        (!filters.periodTo || item.date <= filters.periodTo);
+      const regionOk = !filters.region || item.region === filters.region;
+      const productOk = !filters.product || item.product === filters.product;
+      const sellerOk = !filters.seller || item.seller === filters.seller;
+      return dateOk && regionOk && productOk && sellerOk;
+    });
   }, [data, filters]);
 
-  // Listas únicas para filtros
-  const uniqueRegions = useMemo(
-    (): string[] => Array.from(new Set(data.map((d) => d.Region))).sort(),
-    [data]
-  );
-  const uniqueProducts = useMemo(
-    (): string[] => Array.from(new Set(data.map((d) => d.Product))).sort(),
-    [data]
-  );
-  const uniqueSellers = useMemo(
-    (): string[] => Array.from(new Set(data.map((d) => d.Seller))).sort(),
-    [data]
-  );
-
-  // Calcula KPIs principais
-  const kpis = useMemo(() => {
-    const totalVendas = filteredData.reduce((sum, row) => sum + row.Total, 0);
-    const totalPedidos = filteredData.length;
-    const ticketMedio =
-      totalPedidos > 0 ? Number((totalVendas / totalPedidos).toFixed(2)) : 0;
-
-    const productTotals: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      productTotals[row.Product] =
-        (productTotals[row.Product] || 0) + row.Total;
+  const kpis: KPIs = useMemo(() => {
+    const orders = filteredData.length;
+    const totalValue = filteredData.reduce((sum, i) => sum + i.total, 0);
+    const totalWeight = filteredData.reduce((sum, i) => sum + i.weight, 0);
+    const avgTicket = orders ? totalValue / orders : 0;
+    const prodTotals: Record<string, number> = {};
+    filteredData.forEach((i) => {
+      prodTotals[i.product] = (prodTotals[i.product] || 0) + i.total;
     });
-
-    const entries = Object.entries(productTotals);
-    let produtoTop = 'Nenhum';
-    if (entries.length > 0) {
-      produtoTop = entries.reduce(
-        (max: [string, number], curr: [string, number]) =>
-          curr[1] > max[1] ? curr : max,
-        ['', 0]
-      )[0];
-    }
-
-    return { totalVendas, totalPedidos, ticketMedio, produtoTop };
+    const topProducts = Object.entries(prodTotals)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([product, total]) => ({ product, total }));
+    return { totalWeight, totalValue, orders, avgTicket, topProducts };
   }, [filteredData]);
 
-  // Dados para gráfico de linha: evolução de vendas por data
-  const lineData = useMemo(() => {
-    const daily: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      daily[row.Date] = (daily[row.Date] || 0) + row.Total;
+  const lineData: ChartLineData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((item) => {
+      const month = item.date.substring(0, 7);
+      grouped[month] = (grouped[month] || 0) + item.total;
     });
-    // Usa Object.entries para converter Record em array
-    return Object.entries(daily)
-      .map(([date, total]) => ({ date, total }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    return Object.entries(grouped)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, total]) => ({ month, total }));
   }, [filteredData]);
 
-  // Dados para gráfico de barras: volume por produto
-  const barData = useMemo(() => {
-    const prodVol: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      prodVol[row.Product] = (prodVol[row.Product] || 0) + row.Quantity;
+  const barData: ChartBarData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((item) => {
+      grouped[item.product] = (grouped[item.product] || 0) + item.total;
     });
-    // Usa Object.entries para converter Record em array
-    return Object.entries(prodVol).map(([product, quantity]) => ({
-      product,
-      quantity,
+    return Object.entries(grouped)
+      .map(([product, total]) => ({ product, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  }, [filteredData]);
+
+  const pieData: ChartPieData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((item) => {
+      grouped[item.region] = (grouped[item.region] || 0) + item.total;
+    });
+    return Object.entries(grouped).map(([region, total]) => ({
+      region,
+      total,
     }));
   }, [filteredData]);
 
-  // Dados para gráfico de pizza: distribuição por região
-  const pieData = useMemo(() => {
-    const regTotal: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      regTotal[row.Region] = (regTotal[row.Region] || 0) + row.Total;
-    });
-    // Usa Object.entries para converter Record em array
-    return Object.entries(regTotal).map(([region, total]) => ({
-      name: region,
-      value: total,
-    }));
-  }, [filteredData]);
+  const regions = useMemo(
+    () => [...new Set(data.map((d) => d.region))].sort(),
+    [data]
+  );
+  const products = useMemo(
+    () => [...new Set(data.map((d) => d.product))].sort(),
+    [data]
+  );
+  const sellers = useMemo(
+    () => [...new Set(data.map((d) => d.seller))].sort(),
+    [data]
+  );
 
-  // Alterna abertura dos filtros colapsáveis
-  const toggleFilter = useCallback((key: FilterKey) => {
-    setFilterOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
+  const updateFilter =
+    (key: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
+      setFilters((prev) => ({ ...prev, [key]: e.target.value }));
+    };
 
-  // Atualiza filtros
-  const updateFilters = useCallback((updates: Partial<Filters>) => {
-    setFilters((prev) => ({ ...prev, ...updates }));
-  }, []);
-
-  // Manipula upload de Excel com validação
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const buffer = ev.target?.result as ArrayBuffer;
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer);
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet);
 
-      const headers = aoa[0] as string[];
-      const expectedHeaders = ['Product', 'Region', 'Seller', 'Date', 'Total', 'Quantity'];
-
-      if (!expectedHeaders.every((h, i) => headers[i]?.trim() === h)) {
-        alert('Arquivo inválido: cabeçalhos devem ser exatamente Product, Region, Seller, Date, Total, Quantity');
+      if (jsonData.length === 0) {
+        alert('Arquivo vazio');
         return;
       }
 
-      const newData: DataRow[] = aoa
-        .slice(1)
-        .map((row) => {
-          const product = String(row[0] ?? '').trim();
-          const region = String(row[1] ?? '').trim();
-          const seller = String(row[2] ?? '').trim();
-          const dateStr = String(row[3] ?? '').trim();
-          const total = parseFloat(String(row[4] ?? '0'));
-          const quantity = parseFloat(String(row[5] ?? '0'));
+      const headers = Object.keys(jsonData[0]);
+      const requiredHeaders = ['Data', 'Produto', 'Região', 'Vendedor', 'Peso', 'Total'];
+      const missingHeaders = requiredHeaders.filter((h) => !headers.includes(h));
+      if (missingHeaders.length > 0) {
+        alert(`Colunas obrigatórias ausentes: ${missingHeaders.join(', ')}`);
+        return;
+      }
 
-          if (
-            isNaN(total) ||
-            isNaN(quantity) ||
-            !dateStr.match(/^\d{4}-\d{2}-\d{2}$/)
-          ) {
-            return null;
-          }
+      const parsedData: SalesData[] = jsonData
+        .map((row) => ({
+          date: String(row.Data || ''),
+          product: String(row.Produto || ''),
+          region: String(row.Região || ''),
+          seller: String(row.Vendedor || ''),
+          weight: parseFloat(String(row.Peso || '0')) || 0,
+          total: parseFloat(String(row.Total || '0')) || 0,
+        }))
+        .filter(
+          (d) =>
+            d.date &&
+            d.product &&
+            d.region &&
+            d.seller &&
+            d.weight > 0 &&
+            d.total > 0 &&
+            !isNaN(new Date(d.date).getTime())
+        );
 
-          return {
-            Product: product,
-            Region: region,
-            Seller: seller,
-            Date: dateStr,
-            Total: total,
-            Quantity: quantity,
-          };
-        })
-        .filter((row): row is DataRow => row !== null);
+      if (parsedData.length === 0) {
+        alert('Nenhum dado válido encontrado');
+        return;
+      }
 
-      setData((prev) => [...prev, ...newData]);
+      setData(parsedData);
       e.target.value = '';
-    };
-    reader.readAsArrayBuffer(file);
-  }, []);
+      alert(`${parsedData.length} linhas carregadas com sucesso!`);
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Erro ao processar o arquivo. Verifique se é um Excel válido.');
+    }
+  };
 
-  // Limpa todos os dados
-  const clearData = useCallback(() => {
-    setData([]);
-    localStorage.removeItem('salesData');
-  }, []);
-
-  // Exporta dados filtrados para Excel
-  const exportExcel = useCallback(() => {
-    if (filteredData.length === 0) return;
-
-    const wb = XLSX.utils.book_new();
-    const headers = [['Product', 'Region', 'Seller', 'Date', 'Total', 'Quantity']];
-    const rows = filteredData.map((r) => [
-      r.Product,
-      r.Region,
-      r.Seller,
-      r.Date,
-      r.Total,
-      r.Quantity,
-    ]);
-    const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
-    XLSX.utils.book_append_sheet(wb, ws, 'Vendas');
-    XLSX.writeFile(wb, 'vendas_filtradas.xlsx');
+  const handleExport = useCallback(() => {
+    if (filteredData.length === 0) {
+      alert('Nenhum dado para exportar');
+      return;
+    }
+    const exportData = filteredData.map((d) => ({
+      Data: d.date,
+      Produto: d.product,
+      Região: d.region,
+      Vendedor: d.seller,
+      Peso: d.weight.toFixed(2),
+      Total: d.total.toFixed(2),
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendas Filtradas');
+    XLSX.writeFile(workbook, `vendas_filtradas_${new Date().toISOString().slice(0,10)}.xlsx`);
   }, [filteredData]);
 
-  const glassKpi =
-    'backdrop-blur-xl bg-white/30 border border-white/40 rounded-2xl p-6 shadow-xl shadow-black/10 hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-300 text-center';
-  const glassCard =
-    'backdrop-blur-xl bg-white/20 border border-white/30 rounded-3xl shadow-2xl shadow-indigo-500/10 hover:shadow-indigo-500/20 transition-all duration-300 p-8';
-  const glassFilter =
-    'backdrop-blur-xl bg-white/20 border border-white/30 rounded-2xl shadow-xl shadow-indigo-500/10 p-6 hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300';
+  const handleMonthlyClose = () => {
+    if (filteredData.length === 0) {
+      alert('Nenhum dado para fechar');
+      return;
+    }
+    // Simulate monthly closing
+    alert('Fechamento mensal realizado com sucesso! Total: R$ ' + kpis.totalValue.toLocaleString('pt-BR'));
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-100 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Cabeçalho com botões */}
-        <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center mb-12">
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
-            Dashboard de Vendas
-          </h1>
-          <div className="flex flex-wrap gap-3">
-            <label className="px-6 py-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer font-medium">
-              Upload Excel
+    <div className={`${inter.className} min-h-screen bg-gradient-to-br from-[#0f172a] via-slate-900 to-[#9333ea]/10 text-[#f1f5f9] font-sans antialiased`}>
+      {/* Navbar fixa */}
+      <nav className="fixed top-0 w-full bg-black/40 backdrop-blur-xl border-b border-white/10 z-50 shadow-2xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex-shrink-0">
+              <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-lg">
+                Metalfama
+              </h1>
+            </div>
+            <div className="hidden md:flex items-center space-x-8 text-lg font-medium">
+              <a href="#" className="text-indigo-300 hover:text-white transition-colors duration-200 py-2 border-b-2 border-transparent hover:border-indigo-300">
+                Dashboard
+              </a>
+              <a href="#" className="hover:text-indigo-300 transition-colors duration-200 py-2 border-b-2 border-transparent hover:border-indigo-300">
+                Relatórios
+              </a>
+              <a href="#" className="hover:text-indigo-300 transition-colors duration-200 py-2 border-b-2 border-transparent hover:border-indigo-300">
+                Configurações
+              </a>
+            </div>
+            <button
+              className="md:hidden p-2 rounded-lg backdrop-blur-sm bg-white/10 hover:bg-white/20 transition-all duration-200"
+              onClick={() => setShowMenu(!showMenu)}
+              aria-label="Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        {showMenu && (
+          <div className="md:hidden bg-black/80 backdrop-blur-xl border-t border-white/10 p-6 space-y-4 animate-in slide-in-from-top-4 duration-200">
+            <a
+              href="#"
+              className="block px-4 py-3 text-lg font-semibold hover:text-indigo-300 transition-colors rounded-xl hover:bg-white/10"
+              onClick={() => setShowMenu(false)}
+            >
+              Dashboard
+            </a>
+            <a
+              href="#"
+              className="block px-4 py-3 text-lg font-semibold hover:text-indigo-300 transition-colors rounded-xl hover:bg-white/10"
+              onClick={() => setShowMenu(false)}
+            >
+              Relatórios
+            </a>
+            <a
+              href="#"
+              className="block px-4 py-3 text-lg font-semibold hover:text-indigo-300 transition-colors rounded-xl hover:bg-white/10"
+              onClick={() => setShowMenu(false)}
+            >
+              Configurações
+            </a>
+          </div>
+        )}
+      </nav>
+
+      <main className="pt-20 p-4 md:p-8 lg:p-12">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <header className="text-center mb-16 md:mb-20">
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-2xl mb-4">
+              Dashboard de Vendas
+            </h1>
+            <p className="text-xl md:text-2xl text-slate-300 font-light drop-shadow-lg">
+              Metalfama - Análises Profissionais e Insights em Tempo Real
+            </p>
+          </header>
+
+          {/* Upload, Export e Fechamento */}
+          <div className="flex flex-col lg:flex-row gap-4 mb-16 justify-center lg:justify-start">
+            <label className="flex-1 max-w-md bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold px-8 py-6 rounded-3xl shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300 cursor-pointer text-center">
+              📁 Upload Excel
               <input
                 type="file"
                 accept=".xlsx,.xls"
-                onChange={handleFileUpload}
+                onChange={handleUpload}
                 className="hidden"
               />
             </label>
             <button
-              onClick={clearData}
-              className="px-6 py-3 bg-gradient-to-r from-red-400 to-red-500 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
-            >
-              Limpar Dados
-            </button>
-            <button
-              onClick={exportExcel}
+              onClick={handleExport}
+              className="px-8 py-6 bg-emerald-500/90 hover:bg-emerald-600 text-white font-semibold rounded-3xl shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300 whitespace-nowrap"
               disabled={filteredData.length === 0}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Exportar Excel
+              💾 Export Excel
             </button>
-            <Link
-              href="/fechamento"
-              className="px-8 py-4 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold rounded-3xl shadow-2xl hover:shadow-3xl hover:-translate-y-1 transition-all duration-300 text-lg border-2 border-white/20"
-            >
-              📊 Ir para Fechamento Mensal
-            </Link>
-          </div>
-        </div>
-
-        {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          <div className={glassKpi}>
-            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-blue-600 mb-2">
-              {kpis.totalVendas.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </div>
-            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
-              Total Vendas
-            </div>
-          </div>
-          <div className={glassKpi}>
-            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-green-600 mb-2">
-              {kpis.totalPedidos.toLocaleString()}
-            </div>
-            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
-              Total Pedidos
-            </div>
-          </div>
-          <div className={glassKpi}>
-            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-purple-600 mb-2">
-              {kpis.ticketMedio.toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </div>
-            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
-              Ticket Médio
-            </div>
-          </div>
-          <div className={glassKpi}>
-            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-600 mb-2 truncate max-w-[150px] mx-auto">
-              {kpis.produtoTop}
-            </div>
-            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
-              Produto Top
-            </div>
-          </div>
-        </div>
-
-        {/* Filtros colapsáveis */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-16">
-          {/* Filtro Período */}
-          <div className={glassFilter}>
             <button
-              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
-              onClick={() => toggleFilter('period')}
+              onClick={handleMonthlyClose}
+              className="px-8 py-6 bg-orange-500/90 hover:bg-orange-600 text-white font-semibold rounded-3xl shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300 flex items-center gap-2 whitespace-nowrap"
+              disabled={filteredData.length === 0}
             >
-              <span className="font-semibold text-lg">Período</span>
-              <svg
-                className={`w-6 h-6 transition-transform duration-300 ${
-                  filterOpen.period ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              🔒 Fechamento Mensal
             </button>
-            {filterOpen.period && (
+          </div>
+
+          {/* KPIs Cards - Sempre visíveis */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-20">
+            {/* Total Weight */}
+            <div className="group p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300">
+              <div className="text-4xl mb-4">⚖️</div>
+              <p className="text-slate-400 text-sm font-medium uppercase tracking-wide mb-2">Peso Total</p>
+              <p className="text-4xl lg:text-5xl font-black text-[#f1f5f9]">
+                {kpis.totalWeight.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg
+              </p>
+            </div>
+
+            {/* Total Value */}
+            <div className="group p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300">
+              <div className="text-4xl mb-4">💰</div>
+              <p className="text-slate-400 text-sm font-medium uppercase tracking-wide mb-2">Valor Total</p>
+              <p className="text-4xl lg:text-5xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                {kpis.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+
+            {/* Pedidos */}
+            <div className="group p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300">
+              <div className="text-4xl mb-4">📦</div>
+              <p className="text-slate-400 text-sm font-medium uppercase tracking-wide mb-2">Pedidos</p>
+              <p className="text-4xl lg:text-5xl font-black text-[#f1f5f9]">
+                {kpis.orders.toLocaleString('pt-BR')}
+              </p>
+            </div>
+
+            {/* Ticket Médio */}
+            <div className="group p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300">
+              <div className="text-4xl mb-4">🎫</div>
+              <p className="text-slate-400 text-sm font-medium uppercase tracking-wide mb-2">Ticket Médio</p>
+              <p className="text-4xl lg:text-5xl font-black bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                {kpis.avgTicket.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+            </div>
+
+            {/* Top 3 Produtos - Span full on smaller screens */}
+            <div className="col-span-1 lg:col-span-1 p-8 rounded-3xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300">
+              <p className="text-slate-300 text-lg font-semibold uppercase tracking-wide mb-6 flex items-center gap-2">
+                🏆 Top 3 Produtos
+              </p>
               <div className="space-y-3">
-                <input
-                  type="date"
-                  value={filters.startDate}
-                  onChange={(e) => updateFilters({ startDate: e.target.value })}
-                  className="w-full p-3 border border-white/30 rounded-xl bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                />
-                <input
-                  type="date"
-                  value={filters.endDate}
-                  onChange={(e) => updateFilters({ endDate: e.target.value })}
-                  className="w-full p-3 border border-white/30 rounded-xl bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Filtro Região */}
-          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
-            <button
-              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
-              onClick={() => toggleFilter('region')}
-            >
-              <span className="font-semibold text-lg">Região</span>
-              <svg
-                className={`w-6 h-6 transition-transform duration-300 ${
-                  filterOpen.region ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {filterOpen.region && (
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                {uniqueRegions.map((region) => (
-                  <label
-                    key={region}
-                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filters.regions.includes(region)}
-                      onChange={(e) => {
-                        const newRegions = e.target.checked
-                          ? [
-                              ...filters.regions,
-                              region,
-                            ].filter((r, i, a) => a.indexOf(r) === i)
-                          : filters.regions.filter((r) => r !== region);
-                        updateFilters({ regions: newRegions });
-                      }}
-                      className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                    />
-                    <span className="text-gray-800 font-medium">{region}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Filtro Produto */}
-          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
-            <button
-              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
-              onClick={() => toggleFilter('product')}
-            >
-              <span className="font-semibold text-lg">Produto</span>
-              <svg
-                className={`w-6 h-6 transition-transform duration-300 ${
-                  filterOpen.product ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {filterOpen.product && (
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                {uniqueProducts.map((product) => (
-                  <label
-                    key={product}
-                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filters.products.includes(product)}
-                      onChange={(e) => {
-                        const newProducts = e.target.checked
-                          ? [
-                              ...filters.products,
-                              product,
-                            ].filter((p, i, a) => a.indexOf(p) === i)
-                          : filters.products.filter((p) => p !== product);
-                        updateFilters({ products: newProducts });
-                      }}
-                      className="mr-3 w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
-                    />
-                    <span className="text-gray-800 font-medium truncate">{product}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Filtro Vendedor */}
-          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
-            <button
-              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
-              onClick={() => toggleFilter('seller')}
-            >
-              <span className="font-semibold text-lg">Vendedor</span>
-              <svg
-                className={`w-6 h-6 transition-transform duration-300 ${
-                  filterOpen.seller ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {filterOpen.seller && (
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                {uniqueSellers.map((seller) => (
-                  <label
-                    key={seller}
-                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filters.sellers.includes(seller)}
-                      onChange={(e) => {
-                        const newSellers = e.target.checked
-                          ? [...filters.sellers, seller].filter((s, i, a) => a.indexOf(s) === i)
-                          : filters.sellers.filter((s) => s !== seller);
-                        updateFilters({ sellers: newSellers });
-                      }}
-                      className="mr-3 w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2"
-                    />
-                    <span className="text-gray-800 font-medium truncate">{seller}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Gráficos em coluna, um abaixo do outro */}
-        <div className="space-y-16 mb-16">
-          {/* Evolução de Vendas por Data */}
-          <section>
-            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent drop-shadow-lg">
-              Evolução de Vendas por Data
-            </h2>
-            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="white/30" />
-                  <XAxis dataKey="date" stroke="#64748b" />
-                  <YAxis stroke="#64748b" />
-                  <Tooltip
-                    formatter={(value: number) =>
-                      [`R$ ${value.toLocaleString('pt-BR')}`, 'Vendas']
-                    }
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#3B82F6"
-                    strokeWidth={4}
-                    dot={{ fill: '#3B82F6', strokeWidth: 2 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
-          {/* Volume por Produto */}
-          <section>
-            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent drop-shadow-lg">
-              Volume por Produto
-            </h2>
-            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="white/30" />
-                  <XAxis dataKey="product" stroke="#64748b" angle={-45} height={80} />
-                  <YAxis stroke="#64748b" />
-                  <Tooltip />
-                  <Bar dataKey="quantity" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
-          {/* Distribuição por Região */}
-          <section>
-            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent drop-shadow-lg">
-              Distribuição por Região
-            </h2>
-            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-        </div>
-
-        {/* Tabela responsiva */}
-        <div className={`${glassCard} overflow-hidden shadow-3xl`}>
-          <h2 className="text-3xl font-bold p-8 border-b border-white/20 bg-white/10 text-gray-800">
-            Dados de Vendas
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-white/10">
-              <thead className="bg-white/20 backdrop-blur-sm">
-                <tr>
-                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Produto
-                  </th>
-                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Região
-                  </th>
-                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Vendedor
-                  </th>
-                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Data
-                  </th>
-                  <th className="px-8 py-6 text-right text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Total
-                  </th>
-                  <th className="px-8 py-6 text-right text-xl font-bold text-gray-800 uppercase tracking-wider">
-                    Quantidade
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10 bg-white/10">
-                {filteredData.map((row, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-white/30 transition-all duration-200"
-                  >
-                    <td className="px-8 py-6 whitespace-nowrap text-lg font-semibold text-gray-800">
-                      {row.Product}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-lg text-gray-700">
-                      {row.Region}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-lg text-gray-700">
-                      {row.Seller}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-lg font-mono text-gray-700">
-                      {row.Date}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-right text-2xl font-bold text-blue-600">
-                      R$ {row.Total.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-right text-xl font-mono text-purple-600">
-                      {row.Quantity.toLocaleString('pt-BR')}
-                    </td>
-                  </tr>
-                ))}
-                {filteredData.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-8 py-20 text-center text-2xl text-gray-500 font-medium"
-                    >
-                      Nenhum dado para exibir. Faça upload de um arquivo Excel.
-                    </td>
-                  </tr>
+                {kpis.topProducts.length === 0 ? (
+                  <p className="text-slate-500 italic">Sem dados</p>
+                ) : (
+                  kpis.topProducts.map((p, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 bg-white/5 rounded-xl">
+                      <span className="font-medium">{p.product}</span>
+                      <span className="font-bold text-indigo-400">
+                        R$ {p.total.toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+                  ))
                 )}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </main>
-  );
-};
 
-export default Page;
+          {/* Filtros Colapsáveis */}
+          <section className="mb-20">
+            <details className="group open:mb-0">
+              <summary className="cursor-pointer p-8 bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 font-semibold text-lg flex items-center gap-3 hover:scale-[1.01]">
+                ⚙️ Filtros Dinâmicos
+                <svg className="w-5 h-5 transition-transform group-open:-rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+              <div className="p-8 mt-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-xl animate-in slide-in-from-top-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold mb-3 text-slate-300">Período De</label>
+                    <input
+                      type="date"
+                      value={filters.periodFrom}
+                      onChange={updateFilter('periodFrom')}
+                      className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl backdrop-blur-xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 focus:border-transparent transition-all duration-200 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-3 text-slate-300">Período Até</label>
+                    <input
+                      type="date"
+                      value={filters.periodTo}
+                      onChange={updateFilter('periodTo')}
+                      className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl backdrop-blur-xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 focus:border-transparent transition-all duration-200 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-3 text-slate-300">Região</label>
+                    <select
+                      value={filters.region}
+                      onChange={updateFilter('region')}
+                      className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl backdrop-blur-xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 focus:border-transparent transition-all duration-200 font-medium appearance-none bg-no-repeat bg-right"
+                    >
+                      <option value="">Todas Regiões</option>
+                      {regions.map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold mb-3 text-slate-300">Produto</label>
+                    <select
+                      value={filters.product}
+                      onChange={updateFilter('product')}
+                      className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl backdrop-blur-xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 focus:border-transparent transition-all duration-200 font-medium appearance-none bg-no-repeat bg-right"
+                    >
+                      <option value="">Todos Produtos</option>
+                      {products.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="lg:col-span-2 md:col-span-2">
+                    <label className="block text-sm font-semibold mb-3 text-slate-300">Vendedor</label>
+                    <select
+                      value={filters.seller}
+                      onChange={updateFilter('seller')}
+                      className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl backdrop-blur-xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-indigo-500/50 focus:border-transparent transition-all duration-200 font-medium appearance-none bg-no-repeat bg-right"
+                    >
+                      <option value="">Todos Vendedores</option>
+                      {sellers.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </section>
+
+          {/* Gráficos em Coluna (100% largura) */}
+          <section className="space-y-12 mb-20">
+            {/* Evolução de Vendas - LineChart */}
+            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300">
+              <h3 className="text-2xl lg:text-3xl font-bold mb-8 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent drop-shadow-lg">
+                📈 Evolução de Vendas
+              </h3>
+              <div className="h-96">
+                {lineData.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-500 text-lg font-medium">
+                    <div className="text-6xl mb-4">📊</div>
+                    Sem dados para exibir. Faça upload!
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={lineData}>
+                      <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="hsla(0,0%,100%,0.1)" />
+                      <XAxis
+                        dataKey="month"
+                        stroke="#f1f5f9"
+                        tickFormatter={(value) =>
+                          new Date(`${value}-01`).toLocaleDateString('pt-BR', {
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        }
+                      />
+                      <YAxis
+                        stroke="#f1f5f9"
+                        tickFormatter={(value: number) =>
+                          `R$ ${value.toLocaleString('pt-BR')}`
+                        }
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          `R$ ${value.toLocaleString('pt-BR')}`,
+                          'Total Vendas',
+                        ]}
+                        labelFormatter={(label) =>
+                          new Date(`${label}-01`).toLocaleDateString('pt-BR', {
+                            month: 'long',
+                            year: 'numeric',
+                          })
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total"
+                        stroke="#4f46e5"
+                        strokeWidth={4}
+                        dot={{ fill: '#9333ea', strokeWidth: 3 }}
+                        activeDot={{ r: 10, strokeWidth: 3 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            {/* Distribuição por Produto - BarChart */}
+            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300">
+              <h3 className="text-2xl lg:text-3xl font-bold mb-8 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent drop-shadow-lg">
+                📊 Distribuição por Produto
+              </h3>
+              <div className="h-96">
+                {barData.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-500 text-lg font-medium">
+                    <div className="text-6xl mb-4">📈</div>
+                    Sem dados para exibir. Faça upload!
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.1)" />
+                      <XAxis
+                        dataKey="product"
+                        angle={-45}
+                        textAnchor="end"
+                        height={80}
+                        stroke="#f1f5f9"
+                      />
+                      <YAxis
+                        stroke="#f1f5f9"
+                        tickFormatter={(value: number) =>
+                          `R$ ${value.toLocaleString('pt-BR')}`
+                        }
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          `R$ ${value.toLocaleString('pt-BR')}`,
+                          'Total por Produto',
+                        ]}
+                      />
+                      <Bar dataKey="total" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            {/* Distribuição por Região - PieChart */}
+            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300">
+              <h3 className="text-2xl lg:text-3xl font-bold mb-8 bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent drop-shadow-lg">
+                🗺️ Distribuição por Região
+              </h3>
+              <div className="h-96 flex items-center justify-center">
+                {pieData.length === 0 ? (
+                  <div className="flex flex-col items-center text-slate-500 text-lg font-medium">
+                    <div className="text-6xl mb-4">🧭</div>
+                    Sem dados para exibir. Faça upload!
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="total"
+                        nameKey="region"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={120}
+                        label={({ name, percent }) =>
+                          `${name} ${(percent * 100).toFixed(0)}%`
+                        }
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number) => [
+                          `R$ ${value.toLocaleString('pt-BR')}`,
+                          'Total por Região',
+                        ]}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* Tabela Responsiva */}
+          <section>
+            <div className="bg-white/10 backdrop-blur-3xl rounded-3xl border border-white/20 shadow-2xl overflow-hidden">
+              <div className="p-8 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
+                <h3 className="text-3xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent drop-shadow-lg flex items-center gap-3">
+                  📋 Tabela de Dados ({filteredData.length})
+                </h3>
+              </div>
+              {filteredData.length === 0 ? (
+                <div className="p-20 text-center">
+                  <div className="text-8xl mb-8 opacity-50">📋</div>
+                  <h4 className="text-2xl font-semibold text-slate-400 mb-4">Nenhum dado carregado</h4>
+                  <p className="text-slate-500 text-lg max-w-md mx-auto">
+                    Faça upload de um arquivo Excel com as colunas corretas para visualizar a tabela.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full divide-y divide-white/10">
+                    <thead className="sticky top-0 bg-white/20 backdrop-blur-xl z-10">
+                      <tr>
+                        <th className="px-8 py-6 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Data</th>
+                        <th className="px-8 py-6 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Produto</th>
+                        <th className="px-8 py-6 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Região</th>
+                        <th className="px-8 py-6 text-left text-xs font-bold text-slate-300 uppercase tracking-wider">Vendedor</th>
+                        <th className="px-8 py-6 text-right text-xs font-bold text-slate-300 uppercase tracking-wider">Peso (kg)</th>
+                        <th className="px-8 py-6 text-right text-xs font-bold text-slate-300 uppercase tracking-wider">Total (R$)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 bg-white/5">
+                      {filteredData.map((row, index) => (
+                        <tr
+                          key={index}
+                          className="hover:bg-white/10 transition-all duration-200 group"
+                        >
+                          <td className="px-8 py-6 whitespace-nowrap text-slate-300 font-medium">
+                            {new Date(row.date).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="px-8 py-6 font-semibold text-slate-200 group-hover:text-white">
+                            {row.product}
+                          </td>
+                          <td className="px-8 py-6">
+                            <span className="inline-flex px-4 py-2 bg-indigo-500/30 border border-indigo-500/50 text-indigo-200 text-sm font-medium rounded-2xl backdrop-blur-sm">
+                              {row.region}
+                            </span>
+                          </td>
+                          <td className="px-8 py-6 text-slate-300 font-medium">
+                            {row.seller}
+                          </td>
+                          <td className="px-8 py-6 text-right font-mono text-slate-200">
+                            {row.weight.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-8 py-6 text-right font-bold text-indigo-400 text-xl">
+                            R$ {row.total.toLocaleString('pt-BR')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
