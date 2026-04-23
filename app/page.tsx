@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, ChangeEvent } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import FechamentoMensal from './componentes/FechamentoMensal';  // ← ESTA LINHA DEVE EXISTIR
 
 // Interface para registro de vendas
 interface SalesRecord {
