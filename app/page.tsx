@@ -1,565 +1,457 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend
-} from 'recharts';
 
-type SalesRow = {
+type DashboardRow = {
+  Produto: string;
+  Total: number;
   Data: string;
   Regiao: string;
-  Produto: string;
   Vendedor: string;
-  Peso: number;
-  Valor: number;
   Material: string;
-  Meta?: number;
-  Etapa: string;
 };
 
-type GroupItem = {
-  name: string;
-  peso: number;
-  valor: number;
-  qtd: number;
-};
+const UploadIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.341 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5a3 3 0 01-3-3m-3 3H6.75"
+    />
+  </svg>
+);
 
-export default function Page() {
-  const [parsedData, setParsedData] = useState<SalesRow[]>([]);
-  const [filteredData, setFilteredData] = useState<SalesRow[]>([]);
-  const [filters, setFilters] = useState({
-    from: '',
-    to: '',
-    regiao: '',
-    produto: '',
-    vendedor: ''
-  });
-  const [currentPage, setCurrentPage] = useState(0);
-  const [activeTab, setActiveTab] = useState<'todos' | 'regiao' | 'produto' | 'vendedor' | 'material'>('todos');
-  const [dragActive, setDragActive] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
+const CubeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M8.25 14.25l3.375 3.375L15 14.25m4.75 0L16.5 7.875M16 13.375l2.375-2.75"
+    />
+  </svg>
+);
+
+const DollarIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 6v12m-3-2l3-3m0 0l3 3M9 18h6"
+    />
+  </svg>
+);
+
+const TargetIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="12" cy="12" r="2" />
+  </svg>
+);
+
+const UsersIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    {...props}
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={2}
+    stroke="currentColor"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v-.003a9.359 9.359 0 013.614-7.566m-7.228 0c-.868 1.45-1.32 3.191-1.32 5.019v-.003c0 1.113.285 2.16.786 3.07m0 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zM15 7.434a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"
+    />
+  </svg>
+);
+
+export default function Dashboard() {
+  const [data, setData] = useState<DashboardRow[]>([]);
+  const [filteredData, setFilteredData] = useState<DashboardRow[]>([]);
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
+  const [filterRegiao, setFilterRegiao] = useState('');
+  const [filterProduto, setFilterProduto] = useState('');
+  const [filterVendedor, setFilterVendedor] = useState('');
+  const [filterMaterial, setFilterMaterial] = useState('');
+  const [activeTab, setActiveTab] = useState<'Cobre' | 'Latão' | 'Alumínio' | 'Inox' | 'Outros'>('Cobre');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const itemsPerPage = 20;
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const currentPageData = useMemo(() => {
-    const start = currentPage * itemsPerPage;
-    return filteredData.slice(start, start + itemsPerPage);
-  }, [filteredData, currentPage]);
-
-  // KPIs
-  const totalPeso = useMemo(
-    () => filteredData.reduce((sum, r) => sum + (r.Peso || 0), 0),
-    [filteredData]
+  const uniqueRegioes = useMemo(
+    () => Array.from(new Set(data.map((r) => r.Regiao))).filter(Boolean).sort(),
+    [data]
   );
-  const totalValor = useMemo(
-    () => filteredData.reduce((sum, r) => sum + (r.Valor || 0), 0),
-    [filteredData]
+  const uniqueProdutos = useMemo(
+    () => Array.from(new Set(data.map((r) => r.Produto))).filter(Boolean).sort(),
+    [data]
   );
-  const totalPedidos = filteredData.length;
-  const ticketMedio = totalPedidos > 0 ? totalValor / totalPedidos : 0;
+  const uniqueVendedores = useMemo(
+    () => Array.from(new Set(data.map((r) => r.Vendedor))).filter(Boolean).sort(),
+    [data]
+  );
+  const uniqueMateriais = useMemo(
+    () => Array.from(new Set(data.map((r) => r.Material))).filter(Boolean).sort(),
+    [data]
+  );
 
-  // Charts data
-  const monthData = useMemo(() => {
-    const months: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      const date = new Date(row.Data);
-      if (isNaN(date.getTime())) return;
-      const month = date.toISOString().slice(0, 7);
-      months[month] = (months[month] || 0) + (row.Valor || 0);
-    });
-    return Object.entries(months)
-      .map(([month, valor]) => ({ month, valor }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-  }, [filteredData]);
-
-  const topProductsData = useMemo(() => {
-    const prodSum: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      const p = row.Produto;
-      prodSum[p] = (prodSum[p] || 0) + (row.Valor || 0);
-    });
-    return Object.entries(prodSum)
-      .map(([produto, valor]) => ({ produto, valor }))
-      .sort((a, b) => b.valor - a.valor);
-  }, [filteredData]);
-
-  // Grouped data for tabs
-  const groupedData = useMemo((): GroupItem[] => {
-    if (activeTab === 'todos') {
-      return filteredData.map((row) => ({
-        name: `${row.Produto} (${row.Regiao})`,
-        peso: row.Peso || 0,
-        valor: row.Valor || 0,
-        qtd: 1
-      }));
-    } else {
-      const groupField = activeTab as keyof SalesRow;
-      const groups: Record<string, GroupItem> = {};
-      filteredData.forEach((row) => {
-        const key = (row[groupField] as string) || 'Desconhecido';
-        if (!groups[key]) {
-          groups[key] = { name: key, peso: 0, valor: 0, qtd: 0 };
-        }
-        groups[key].peso += row.Peso || 0;
-        groups[key].valor += row.Valor || 0;
-        groups[key].qtd += 1;
-      });
-      return Object.values(groups).sort((a, b) => b.valor - a.valor);
-    }
-  }, [filteredData, activeTab]);
-
-  // localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('salesData');
-    if (saved) {
-      try {
-        setParsedData(JSON.parse(saved));
-      } catch {}
-    }
-  }, []);
-
-  useEffect(() => {
-    if (parsedData.length) {
-      localStorage.setItem('salesData', JSON.stringify(parsedData));
-    }
-  }, [parsedData]);
-
-  // Filters
-  useEffect(() => {
-    let data = parsedData;
-    const fromDate = filters.from ? new Date(filters.from) : null;
-    const toDate = filters.to ? new Date(filters.to + 'T23:59:59') : null;
-
-    data = data.filter((row) => {
+  const computedFilteredData = useMemo(() => {
+    return data.filter((row) => {
       const rowDate = new Date(row.Data);
       if (isNaN(rowDate.getTime())) return false;
-      if (fromDate && rowDate < fromDate) return false;
-      if (toDate && rowDate > toDate) return false;
-      if (
-        filters.regiao &&
-        !row.Regiao?.toLowerCase().includes(filters.regiao.toLowerCase())
-      )
-        return false;
-      if (
-        filters.produto &&
-        !row.Produto?.toLowerCase().includes(filters.produto.toLowerCase())
-      )
-        return false;
-      if (
-        filters.vendedor &&
-        !row.Vendedor?.toLowerCase().includes(filters.vendedor.toLowerCase())
-      )
-        return false;
+
+      if (filterStart && rowDate < new Date(filterStart)) return false;
+      if (filterEnd && rowDate > new Date(filterEnd)) return false;
+      if (filterRegiao && row.Regiao !== filterRegiao) return false;
+      if (filterProduto && row.Produto !== filterProduto) return false;
+      if (filterVendedor && row.Vendedor !== filterVendedor) return false;
+      if (filterMaterial && row.Material !== filterMaterial) return false;
+
       return true;
     });
-    setFilteredData(data);
-    setCurrentPage(0);
-  }, [parsedData, filters]);
+  }, [data, filterStart, filterEnd, filterRegiao, filterProduto, filterVendedor, filterMaterial]);
 
-  const handleUpload = useCallback((file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) {
-      alert('Apenas arquivos .xlsx e .xls são permitidos!');
-      return;
+  const totalVolume = useMemo(
+    () => computedFilteredData.reduce((acc, row) => acc + row.Total, 0),
+    [computedFilteredData]
+  );
+
+  const volumeTotal = totalVolume.toLocaleString('pt-BR') + ' kg';
+  const valorTotal = (totalVolume * 4.5).toLocaleString('pt-BR') + ' R$';
+  const meta = 100000;
+  const atinguimento = Math.min(100, (totalVolume / meta) * 100).toFixed(1) + '%';
+  const oportunidades = new Set(computedFilteredData.map((row) => row.Vendedor)).size.toString();
+
+  useEffect(() => {
+    const saved = localStorage.getItem('dashboardData');
+    if (saved) {
+      try {
+        setData(JSON.parse(saved) as DashboardRow[]);
+      } catch {
+        localStorage.removeItem('dashboardData');
+      }
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = e.target?.result;
-      const workbook = XLSX.read(data as string, { type: 'binary' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json<SalesRow>(sheet);
-      setParsedData(jsonData as SalesRow[]);
-      setUploadSuccess(true);
-      setTimeout(() => setUploadSuccess(false), 3000);
-    };
-    reader.readAsBinaryString(file);
   }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  useEffect(() => {
+    setFilteredData(computedFilteredData);
+  }, [computedFilteredData]);
+
+  const handleFile = async (file: File) => {
+    setSelectedFile(file);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0) {
+        alert('Arquivo Excel está vazio.');
+        return;
+      }
+
+      const headers = Object.keys(jsonData[0]);
+      const requiredCols = ['Produto', 'Total', 'Data', 'Região', 'Vendedor', 'Material'];
+      const missingCols = requiredCols.filter((col) => !headers.includes(col));
+
+      if (missingCols.length > 0) {
+        alert(`Colunas obrigatórias ausentes: ${missingCols.join(', ')}`);
+        return;
+      }
+
+      const rows: DashboardRow[] = jsonData
+        .map((row: any) => ({
+          Produto: String(row.Produto || ''),
+          Total: Number(row.Total || 0),
+          Data: String(row.Data || ''),
+          Regiao: String(row.Região || ''),
+          Vendedor: String(row.Vendedor || ''),
+          Material: String(row.Material || ''),
+        }))
+        .filter((row) => !isNaN(row.Total) && row.Total > 0 && row.Data);
+
+      setData(rows);
+      localStorage.setItem('dashboardData', JSON.stringify(rows));
+    } catch (error) {
+      alert(`Erro ao processar o arquivo: ${(error as Error).message}`);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    setDragActive(false);
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
+    if (file && (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls'))) {
+      handleFile(file);
+    }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragActive(true);
+  const handleChooseFile = () => {
+    fileInputRef.current?.click();
   };
 
-  const handleSelectFile = () => {
-    const file = fileInputRef.current?.files?.[0];
-    if (file) handleUpload(file);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFile(file);
+    }
+    e.target.value = '';
   };
 
-  const clearData = () => {
-    setParsedData([]);
-    localStorage.removeItem('salesData');
-    setFilters({ from: '', to: '', regiao: '', produto: '', vendedor: '' });
-    setCurrentPage(0);
-  };
+  const exportFilteredData = () => {
+    if (computedFilteredData.length === 0) return;
 
-  const exportFiltered = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Dados Filtrados');
-    XLSX.writeFile(wb, 'dados_filtrados.xlsx');
+    const headers = ['Produto', 'Total', 'Data', 'Região', 'Vendedor', 'Material'];
+    const csvContent = [
+      headers.join(','),
+      ...computedFilteredData.map((row) =>
+        headers.map((header) => JSON.stringify((row as any)[header]).replace(/,/g, ';')).join(',')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `dados_filtrados_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/30 to-indigo-900 p-6 md:p-12 flex flex-col gap-12">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-emerald-400 via-blue-500 to-purple-600 bg-clip-text text-transparent drop-shadow-2xl mb-6">
-            📊 Visão Geral de Vendas
+        <div className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 backdrop-blur-xl rounded-3xl p-12 md:p-16 text-center text-white shadow-2xl border border-white/20">
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-blue-300 via-purple-300 to-indigo-300 bg-clip-text text-transparent mb-6 drop-shadow-2xl">
+            Dashboard Comercial
           </h1>
-          <p className="text-xl md:text-2xl text-gray-300 font-light max-w-2xl mx-auto">
-            Analise suas vendas e carregue sua planilha para começar
+          <p className="text-xl md:text-2xl opacity-90 font-medium">
+            Métricas de Volume, Valor e Performance
           </p>
         </div>
 
         {/* Upload Section */}
-        <div className="max-w-4xl mx-auto mb-16">
+        <section className="bg-white/5 backdrop-blur-xl border border-white/20 rounded-3xl p-8 md:p-12 text-center transition-all duration-300 hover:border-white/40 hover:shadow-2xl">
           <div
-            className={`relative p-12 rounded-3xl shadow-3xl border border-white/20 bg-white/10 backdrop-blur-xl transition-all duration-300 hover:shadow-4xl hover:scale-[1.02] ${
-              dragActive ? 'bg-white/20 ring-4 ring-emerald-400/30' : ''
+            className={`relative w-full h-48 md:h-56 border-2 border-dashed border-white/30 rounded-2xl flex flex-col items-center justify-center p-8 transition-all duration-300 cursor-pointer group ${
+              isDragOver
+                ? 'bg-white/20 border-white/50 scale-[1.02] shadow-2xl'
+                : 'hover:border-white/50 hover:bg-white/10'
             }`}
             onDragOver={handleDragOver}
-            onDragLeave={() => setDragActive(false)}
+            onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
+            <UploadIcon className="w-20 h-20 md:w-24 md:h-24 text-gray-300 group-hover:text-white mb-6 transition-colors duration-300" />
+            <p className="text-lg md:text-xl text-gray-200 font-medium mb-2">
+              Carregue um arquivo Excel para visualizar as métricas
+            </p>
+            <p className="text-sm text-gray-400 mb-8">ou</p>
+            <button
+              onClick={handleChooseFile}
+              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-8 py-3 md:px-10 md:py-4 rounded-2xl border border-white/30 font-semibold text-white transition-all duration-300 hover:scale-105 hover:shadow-xl active:scale-95"
+            >
+              Escolher arquivo
+            </button>
             <input
               ref={fileInputRef}
               type="file"
               accept=".xlsx,.xls"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              onChange={handleSelectFile}
+              onChange={handleFileSelect}
+              className="hidden"
             />
-            {uploadSuccess ? (
-              <div className="flex flex-col items-center justify-center text-center text-3xl animate-bounce">
-                <span className="text-emerald-400 mb-4">✅</span>
-                <p className="text-2xl font-bold text-emerald-400">Dados carregados com sucesso!</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center text-center h-48">
-                <span className="text-5xl mb-6">📁</span>
-                <p className="text-2xl md:text-3xl font-bold text-gray-200 mb-2">
-                  Arraste sua planilha aqui
-                </p>
-                <p className="text-lg text-gray-400 mb-8">ou</p>
-                <button
-                  onClick={handleSelectFile}
-                  className="bg-gradient-to-r from-emerald-500 to-blue-500 hover:from-emerald-600 hover:to-blue-600 px-10 py-4 rounded-2xl font-bold text-lg shadow-2xl hover:shadow-3xl transition-all duration-300 ring-2 ring-white/20"
-                >
-                  Selecionar Arquivo
-                </button>
+            {selectedFile && (
+              <div className="absolute inset-0 flex items-center justify-center bg-green-500/20 backdrop-blur-sm rounded-2xl border-2 border-green-400/50">
+                <p className="text-green-300 font-semibold text-lg">✅ {selectedFile.name} carregado com sucesso!</p>
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 text-center">
-            <span className="text-5xl mb-4 block mx-auto">⚖️</span>
-            <h3 className="text-2xl font-bold text-white mb-4">Peso Total</h3>
-            <div className="text-4xl font-black bg-gradient-to-r from-emerald-400 to-green-500 bg-clip-text text-transparent">
-              {totalPeso.toLocaleString()} kg
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 text-center">
-            <span className="text-5xl mb-4 block mx-auto">💰</span>
-            <h3 className="text-2xl font-bold text-white mb-4">Valor Total</h3>
-            <div className="text-4xl font-black bg-gradient-to-r from-amber-400 to-yellow-400 bg-clip-text text-transparent">
-              R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 text-center">
-            <span className="text-5xl mb-4 block mx-auto">📦</span>
-            <h3 className="text-2xl font-bold text-white mb-4">Total de Pedidos</h3>
-            <div className="text-4xl font-black bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              {totalPedidos.toLocaleString()}
-            </div>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 text-center">
-            <span className="text-5xl mb-4 block mx-auto">💵</span>
-            <h3 className="text-2xl font-bold text-white mb-4">Ticket Médio</h3>
-            <div className="text-4xl font-black bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
-              R$ {ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <details className="group mb-16 p-6 rounded-3xl bg-white/5 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all duration-300">
-          <summary className="cursor-pointer font-semibold text-2xl flex items-center gap-3 mb-6 list-none">
-            🔍 Filtros
-            <span className="text-lg text-gray-400 ml-auto">({filteredData.length} registros)</span>
-          </summary>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
-              className="bg-white/10 backdrop-blur-xl rounded-2xl px-4 py-3 border border-white/20 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50 outline-none transition-all duration-300 text-white placeholder-gray-400"
-              placeholder="Data Inicial"
-            />
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
-              className="bg-white/10 backdrop-blur-xl rounded-2xl px-4 py-3 border border-white/20 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50 outline-none transition-all duration-300 text-white placeholder-gray-400"
-              placeholder="Data Final"
-            />
-            <input
-              type="text"
-              value={filters.regiao}
-              onChange={(e) => setFilters({ ...filters, regiao: e.target.value })}
-              placeholder="Região"
-              className="bg-white/10 backdrop-blur-xl rounded-2xl px-4 py-3 border border-white/20 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/50 outline-none transition-all duration-300 text-white placeholder-gray-400"
-            />
-            <input
-              type="text"
-              value={filters.produto}
-              onChange={(e) => setFilters({ ...filters, produto: e.target.value })}
-              placeholder="Produto"
-              className="bg-white/10 backdrop-blur-xl rounded-2xl px-4 py-3 border border-white/20 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 outline-none transition-all duration-300 text-white placeholder-gray-400"
-            />
-            <input
-              type="text"
-              value={filters.vendedor}
-              onChange={(e) => setFilters({ ...filters, vendedor: e.target.value })}
-              placeholder="Vendedor"
-              className="bg-white/10 backdrop-blur-xl rounded-2xl px-4 py-3 border border-white/20 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/50 outline-none transition-all duration-300 text-white placeholder-gray-400"
-            />
-          </div>
-        </details>
-
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-3 justify-center mb-12">
-          {[
-            { key: 'todos' as const, label: '👥 Todos' },
-            { key: 'regiao' as const, label: '🌍 Por Região' },
-            { key: 'produto' as const, label: '📦 Por Produto' },
-            { key: 'vendedor' as const, label: '👨‍💼 Por Vendedor' },
-            { key: 'material' as const, label: '🔬 Por Material' }
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`px-8 py-4 rounded-2xl font-bold text-lg transition-all duration-300 shadow-xl ${
-                activeTab === key
-                  ? 'bg-gradient-to-r from-emerald-500 to-blue-500 shadow-emerald-500/50 scale-105 ring-4 ring-emerald-400/30'
-                  : 'bg-white/10 hover:bg-white/20 border-2 border-white/20 hover:shadow-2xl hover:scale-105'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Grouped Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-16">
-          {groupedData.map((item, i) => (
-            <div
-              key={i}
-              className="p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 group"
-            >
-              <h3 className="text-2xl font-bold text-white mb-6 truncate group-hover:text-emerald-300">
-                {item.name}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
-                <div>
-                  <span className="text-sm text-gray-400 block mb-2">Peso</span>
-                  <span className="text-2xl font-bold text-emerald-400">
-                    {item.peso.toLocaleString()} kg
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-400 block mb-2">Valor</span>
-                  <span className="text-2xl font-bold text-amber-400">
-                    R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-400 block mb-2">Qtd</span>
-                  <span className="text-2xl font-bold text-blue-400">{item.qtd}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-          <div className="bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-8 text-center">
-              📈 Evolução de Vendas por Mês
-            </h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={monthData}>
-                <defs>
-                  <linearGradient id="colorLine" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#82ca9d" stopOpacity={0.8} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.1)" />
-                <XAxis dataKey="month" stroke="#e2e8f0" />
-                <YAxis stroke="#e2e8f0" />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="valor"
-                  stroke="url(#colorLine)"
-                  strokeWidth={4}
-                  dot={{ fill: '#8884d8', strokeWidth: 2 }}
+        {data.length > 0 && (
+          <>
+            {/* Filters */}
+            <section className="bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 p-6 md:p-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+                <input
+                  type="date"
+                  value={filterStart}
+                  onChange={(e) => setFilterStart(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white placeholder-gray-300 focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300"
                 />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-amber-500 bg-clip-text text-transparent mb-8 text-center">
-              📊 Top 10 Produtos Mais Vendidos
-            </h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={topProductsData.slice(0, 10)}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsla(0,0%,100%,0.1)" />
-                <XAxis dataKey="produto" stroke="#e2e8f0" angle={-45} textAnchor="end" height={80} />
-                <YAxis stroke="#e2e8f0" />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey="valor"
-                  fill="#8884d8"
-                  radius={[4, 4, 0, 0]}
-                  barSize={30}
+                <input
+                  type="date"
+                  value={filterEnd}
+                  onChange={(e) => setFilterEnd(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white placeholder-gray-300 focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300"
                 />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Table */}
-        {filteredData.length > 0 && (
-          <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/20 shadow-3xl overflow-hidden mb-16">
-            <div className="overflow-x-auto">
-              <table className="w-full divide-y divide-white/10">
-                <thead className="sticky top-0 bg-white/20 backdrop-blur-xl z-20">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider border-r border-white/10">Data</th>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider border-r border-white/10">Região</th>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider border-r border-white/10">Produto</th>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider border-r border-white/10">Vendedor</th>
-                    <th className="px-6 py-4 text-right text-lg font-bold text-white tracking-wider border-r border-white/10">Peso</th>
-                    <th className="px-6 py-4 text-right text-lg font-bold text-white tracking-wider border-r border-white/10">Valor</th>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider border-r border-white/10">Material</th>
-                    <th className="px-6 py-4 text-right text-lg font-bold text-white tracking-wider border-r border-white/10">Meta</th>
-                    <th className="px-6 py-4 text-left text-lg font-bold text-white tracking-wider">Etapa</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {currentPageData.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="hover:bg-white/10 transition-all duration-200"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white border-r border-white/10">
-                        {row.Data}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 border-r border-white/10">
-                        {row.Regiao}
-                      </td>
-                      <td className="px-6 py-4 max-w-xs truncate text-sm text-gray-300 border-r border-white/10">
-                        {row.Produto}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 border-r border-white/10">
-                        {row.Vendedor}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-emerald-400 text-right border-r border-white/10">
-                        {row.Peso?.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-amber-400 text-right border-r border-white/10">
-                        R$ {row.Valor?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300 border-r border-white/10">
-                        {row.Material}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right border-r border-white/10">
-                        {row.Meta?.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-4 py-2 rounded-full text-xs font-bold ${
-                            row.Etapa === 'Concluido'
-                              ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30'
-                              : 'bg-orange-500/20 text-orange-300 ring-1 ring-orange-400/30'
-                          }`}
-                        >
-                          {row.Etapa}
-                        </span>
-                      </td>
-                    </tr>
+                <select
+                  value={filterRegiao}
+                  onChange={(e) => setFilterRegiao(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300 appearance-none"
+                >
+                  <option value="">Todas Regiões</option>
+                  {uniqueRegioes.map((regiao) => (
+                    <option key={regiao} value={regiao}>
+                      {regiao}
+                    </option>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="p-8 bg-white/10 border-t border-white/20 flex flex-col sm:flex-row justify-between items-center gap-6">
-              <div className="text-lg text-gray-300">Total: {filteredData.length} registros</div>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-                  disabled={currentPage === 0}
-                  className="px-6 py-3 bg-gradient-to-r from-emerald-500/80 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-bold shadow-xl hover:shadow-2xl transition-all duration-300"
+                </select>
+                <select
+                  value={filterProduto}
+                  onChange={(e) => setFilterProduto(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300 appearance-none"
                 >
-                  Anterior
-                </button>
-                <span className="text-xl font-bold text-white min-w-[120px] text-center">
-                  Página {currentPage + 1} de {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-                  disabled={currentPage === totalPages - 1}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-500/80 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-bold shadow-xl hover:shadow-2xl transition-all duration-300"
+                  <option value="">Todos Produtos</option>
+                  {uniqueProdutos.map((produto) => (
+                    <option key={produto} value={produto}>
+                      {produto}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filterVendedor}
+                  onChange={(e) => setFilterVendedor(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300 appearance-none"
                 >
-                  Próxima
-                </button>
+                  <option value="">Todos Vendedores</option>
+                  {uniqueVendedores.map((vendedor) => (
+                    <option key={vendedor} value={vendedor}>
+                      {vendedor}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filterMaterial}
+                  onChange={(e) => setFilterMaterial(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/50 focus:ring-2 focus:ring-white/40 transition-all duration-300 appearance-none"
+                >
+                  <option value="">Todos Materiais</option>
+                  {uniqueMateriais.map((material) => (
+                    <option key={material} value={material}>
+                      {material}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
-          </div>
-        )}
+              <button
+                onClick={exportFilteredData}
+                className="ml-auto bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center gap-2"
+              >
+                Exportar Dados Filtrados ({computedFilteredData.length})
+              </button>
+            </section>
 
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-          <button
-            onClick={clearData}
-            className="px-10 py-4 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 rounded-3xl font-bold text-xl shadow-2xl hover:shadow-3xl transition-all duration-300 ring-2 ring-red-400/30 hover:ring-red-400/50"
-            disabled={parsedData.length === 0}
-          >
-            🗑️ Limpar Dados
-          </button>
-          <button
-            onClick={exportFiltered}
-            className="px-10 py-4 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 rounded-3xl font-bold text-xl shadow-2xl hover:shadow-3xl transition-all duration-300 ring-2 ring-green-400/30 hover:ring-green-400/50"
-            disabled={filteredData.length === 0}
-          >
-            📤 Exportar Excel Filtrado
-          </button>
-        </div>
+            {/* KPI Cards */}
+            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+              <div className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 text-center hover:bg-white/20 hover:scale-[1.05] hover:shadow-2xl hover:border-white/40 transition-all duration-300 cursor-default">
+                <CubeIcon className="w-14 h-14 md:w-16 md:h-16 mx-auto mb-4 text-cyan-400 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white mb-2 drop-shadow-lg">
+                  {volumeTotal}
+                </h3>
+                <p className="text-gray-300 uppercase tracking-wider font-medium text-sm md:text-base">
+                  Volume Total (kg)
+                </p>
+              </div>
+              <div className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 text-center hover:bg-white/20 hover:scale-[1.05] hover:shadow-2xl hover:border-white/40 transition-all duration-300 cursor-default">
+                <DollarIcon className="w-14 h-14 md:w-16 md:h-16 mx-auto mb-4 text-emerald-400 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white mb-2 drop-shadow-lg">
+                  {valorTotal}
+                </h3>
+                <p className="text-gray-300 uppercase tracking-wider font-medium text-sm md:text-base">
+                  Valor Total (R$)
+                </p>
+              </div>
+              <div className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 text-center hover:bg-white/20 hover:scale-[1.05] hover:shadow-2xl hover:border-white/40 transition-all duration-300 cursor-default">
+                <TargetIcon className="w-14 h-14 md:w-16 md:h-16 mx-auto mb-4 text-orange-400 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white mb-2 drop-shadow-lg">
+                  {atingimento}
+                </h3>
+                <p className="text-gray-300 uppercase tracking-wider font-medium text-sm md:text-base">
+                  Atingimento de Meta %
+                </p>
+              </div>
+              <div className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 text-center hover:bg-white/20 hover:scale-[1.05] hover:shadow-2xl hover:border-white/40 transition-all duration-300 cursor-default">
+                <UsersIcon className="w-14 h-14 md:w-16 md:h-16 mx-auto mb-4 text-purple-400 opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-white mb-2 drop-shadow-lg">
+                  {oportunidades}
+                </h3>
+                <p className="text-gray-300 uppercase tracking-wider font-medium text-sm md:text-base">
+                  Oportunidades
+                </p>
+              </div>
+            </section>
+
+            {/* Tabs */}
+            <section className="bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 p-6 md:p-8">
+              <div className="bg-white/10 rounded-2xl p-1 mb-8 flex shadow-lg">
+                {(['Cobre', 'Latão', 'Alumínio', 'Inox', 'Outros'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    className={`flex-1 py-4 px-4 md:px-6 rounded-xl font-bold text-sm md:text-base transition-all duration-300 ${
+                      activeTab === tab
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-xl scale-[1.02]'
+                        : 'text-gray-300 hover:text-white hover:bg-white/20 hover:scale-[1.01]'
+                    }`}
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <div className="min-h-64 bg-white/5 rounded-2xl border border-white/10 p-12 md:p-16 text-center flex items-center justify-center text-gray-400 font-medium text-lg md:text-xl">
+                Estrutura das abas por material pronta. Adicione conteúdo aqui.
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );
 }
+
