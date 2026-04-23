@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import {
   LineChart,
@@ -12,348 +13,661 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  Cell,
   PieChart,
   Pie,
-  Legend,
+  Cell,
 } from 'recharts';
 
-type DataRow = {
-  Date: string;
-  Product: string;
-  Category: string;
-  Quantity: number;
-  Price: number;
-  Total: number;
-};
-
 type Filters = {
-  dateFrom: string;
-  dateTo: string;
-  product: string;
+  startDate: string;
+  endDate: string;
+  regions: string[];
+  products: string[];
+  sellers: string[];
 };
 
-const Page: React.FC = () => {
+type FilterKey = 'period' | 'region' | 'product' | 'seller';
+
+interface DataRow {
+  Product: string;
+  Region: string;
+  Seller: string;
+  Date: string;
+  Total: number;
+  Quantity: number;
+}
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+
+const Page = () => {
   const [data, setData] = useState<DataRow[]>([]);
-  const [filteredData, setFilteredData] = useState<DataRow[]>([]);
-  const [filters, setFilters] = useState<Filters>({ dateFrom: '', dateTo: '', product: '' });
-  const [lastUpdate, setLastUpdate] = useState<string>('Never');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [filters, setFilters] = useState<Filters>({
+    startDate: '',
+    endDate: '',
+    regions: [],
+    products: [],
+    sellers: [],
+  });
+  const [filterOpen, setFilterOpen] = useState<Record<FilterKey, boolean>>({
+    period: true,
+    region: false,
+    product: false,
+    seller: false,
+  });
 
+  // Carrega dados do localStorage no mount
+  useEffect(() => {
+    const saved = localStorage.getItem('salesData');
+    if (saved) {
+      try {
+        const parsed: DataRow[] = JSON.parse(saved);
+        setData(parsed);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      }
+    }
+  }, []);
+
+  // Persiste dados no localStorage
+  useEffect(() => {
+    localStorage.setItem('salesData', JSON.stringify(data));
+  }, [data]);
+
+  // Dados filtrados com base nos filtros ativos
+  const filteredData = useMemo((): DataRow[] => {
+    let res = data;
+    if (filters.startDate) {
+      res = res.filter((r) => r.Date >= filters.startDate);
+    }
+    if (filters.endDate) {
+      res = res.filter((r) => r.Date <= filters.endDate);
+    }
+    if (filters.regions.length > 0) {
+      res = res.filter((r) => filters.regions.includes(r.Region));
+    }
+    if (filters.products.length > 0) {
+      res = res.filter((r) => filters.products.includes(r.Product));
+    }
+    if (filters.sellers.length > 0) {
+      res = res.filter((r) => filters.sellers.includes(r.Seller));
+    }
+    return res;
+  }, [data, filters]);
+
+  // Listas únicas para filtros
+  const uniqueRegions = useMemo(
+    (): string[] => Array.from(new Set(data.map((d) => d.Region))).sort(),
+    [data]
+  );
+  const uniqueProducts = useMemo(
+    (): string[] => Array.from(new Set(data.map((d) => d.Product))).sort(),
+    [data]
+  );
+  const uniqueSellers = useMemo(
+    (): string[] => Array.from(new Set(data.map((d) => d.Seller))).sort(),
+    [data]
+  );
+
+  // Calcula KPIs principais
   const kpis = useMemo(() => {
-    const totalSales = filteredData.reduce((sum, row) => sum + row.Total, 0);
-    const totalOrders = filteredData.length;
-    const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-    const topProduct = [...filteredData.reduce((acc, row) => {
-      acc[row.Product] = (acc[row.Product] || 0) + row.Total;
-      return acc;
-    }, {} as Record<string, number>)]
-      .sort(([, a], [, b]) => b - a)[0];
+    const totalVendas = filteredData.reduce((sum, row) => sum + row.Total, 0);
+    const totalPedidos = filteredData.length;
+    const ticketMedio =
+      totalPedidos > 0 ? Number((totalVendas / totalPedidos).toFixed(2)) : 0;
 
-    return {
-      totalSales,
-      totalOrders,
-      avgOrderValue: Number(avgOrderValue.toFixed(2)),
-      topProduct: topProduct ? `${topProduct[0]} (${topProduct[1].toFixed(0)})` : 'None',
-    };
+    const productTotals: Record<string, number> = {};
+    filteredData.forEach((row) => {
+      productTotals[row.Product] =
+        (productTotals[row.Product] || 0) + row.Total;
+    });
+
+    const entries = Object.entries(productTotals);
+    let produtoTop = 'Nenhum';
+    if (entries.length > 0) {
+      produtoTop = entries.reduce(
+        (max: [string, number], curr: [string, number]) =>
+          curr[1] > max[1] ? curr : max,
+        ['', 0]
+      )[0];
+    }
+
+    return { totalVendas, totalPedidos, ticketMedio, produtoTop };
   }, [filteredData]);
 
-  const salesOverTime = useMemo(() => {
-    const grouped = filteredData.reduce((acc, row) => {
-      const date = row.Date.split('T')[0];
-      acc[date] = (acc[date] || 0) + row.Total;
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(grouped)
-      .map(([date, sales]) => ({ date, sales: Number(sales) }))
+  // Dados para gráfico de linha: evolução de vendas por data
+  const lineData = useMemo(() => {
+    const daily: Record<string, number> = {};
+    filteredData.forEach((row) => {
+      daily[row.Date] = (daily[row.Date] || 0) + row.Total;
+    });
+    // Usa Object.entries para converter Record em array
+    return Object.entries(daily)
+      .map(([date, total]) => ({ date, total }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredData]);
 
-  const topProducts = useMemo(() => {
-    const grouped = filteredData.reduce((acc, row) => {
-      acc[row.Product] = (acc[row.Product] || 0) + row.Total;
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(grouped)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([product, sales]) => ({ product, sales: Number(sales) }));
+  // Dados para gráfico de barras: volume por produto
+  const barData = useMemo(() => {
+    const prodVol: Record<string, number> = {};
+    filteredData.forEach((row) => {
+      prodVol[row.Product] = (prodVol[row.Product] || 0) + row.Quantity;
+    });
+    // Usa Object.entries para converter Record em array
+    return Object.entries(prodVol).map(([product, quantity]) => ({
+      product,
+      quantity,
+    }));
   }, [filteredData]);
 
-  const categoryData = useMemo(() => {
-    const grouped = filteredData.reduce((acc, row) => {
-      acc[row.Category] = (acc[row.Category] || 0) + row.Total;
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(grouped).map(([name, value]) => ({ name, value: Number(value) }));
+  // Dados para gráfico de pizza: distribuição por região
+  const pieData = useMemo(() => {
+    const regTotal: Record<string, number> = {};
+    filteredData.forEach((row) => {
+      regTotal[row.Region] = (regTotal[row.Region] || 0) + row.Total;
+    });
+    // Usa Object.entries para converter Record em array
+    return Object.entries(regTotal).map(([region, total]) => ({
+      name: region,
+      value: total,
+    }));
   }, [filteredData]);
 
-  const applyFilters = useCallback(() => {
-    let result = data;
-    if (filters.dateFrom) {
-      result = result.filter(row => row.Date >= filters.dateFrom);
-    }
-    if (filters.dateTo) {
-      result = result.filter(row => row.Date <= filters.dateTo);
-    }
-    if (filters.product) {
-      result = result.filter(row => row.Product === filters.product);
-    }
-    setFilteredData(result);
-  }, [data, filters]);
+  // Alterna abertura dos filtros colapsáveis
+  const toggleFilter = useCallback((key: FilterKey) => {
+    setFilterOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Atualiza filtros
+  const updateFilters = useCallback((updates: Partial<Filters>) => {
+    setFilters((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  // Manipula upload de Excel com validação
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setLoading(true);
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary' });
+    reader.onload = (ev) => {
+      const buffer = ev.target?.result as ArrayBuffer;
+      const wb = XLSX.read(buffer, { type: 'array' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const json = XLSX.utils.sheet_to_json<DataRow>(ws);
-      setData(json as DataRow[]);
-      setFilteredData(json as DataRow[]);
-      setLastUpdate(new Date().toLocaleString('en-US'));
-      setLoading(false);
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+
+      const headers = aoa[0] as string[];
+      const expectedHeaders = ['Product', 'Region', 'Seller', 'Date', 'Total', 'Quantity'];
+
+      if (!expectedHeaders.every((h, i) => headers[i]?.trim() === h)) {
+        alert('Arquivo inválido: cabeçalhos devem ser exatamente Product, Region, Seller, Date, Total, Quantity');
+        return;
+      }
+
+      const newData: DataRow[] = aoa
+        .slice(1)
+        .map((row) => {
+          const product = String(row[0] ?? '').trim();
+          const region = String(row[1] ?? '').trim();
+          const seller = String(row[2] ?? '').trim();
+          const dateStr = String(row[3] ?? '').trim();
+          const total = parseFloat(String(row[4] ?? '0'));
+          const quantity = parseFloat(String(row[5] ?? '0'));
+
+          if (
+            isNaN(total) ||
+            isNaN(quantity) ||
+            !dateStr.match(/^\d{4}-\d{2}-\d{2}$/)
+          ) {
+            return null;
+          }
+
+          return {
+            Product: product,
+            Region: region,
+            Seller: seller,
+            Date: dateStr,
+            Total: total,
+            Quantity: quantity,
+          };
+        })
+        .filter((row): row is DataRow => row !== null);
+
+      setData((prev) => [...prev, ...newData]);
+      e.target.value = '';
     };
-    reader.readAsBinaryString(file);
-  };
+    reader.readAsArrayBuffer(file);
+  }, []);
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Filtered Data');
-    XLSX.writeFile(wb, 'dashboard_data.xlsx');
-  };
-
-  const clearData = () => {
+  // Limpa todos os dados
+  const clearData = useCallback(() => {
     setData([]);
-    setFilteredData([]);
-    setFilters({ dateFrom: '', dateTo: '', product: '' });
-    setLastUpdate('Never');
-  };
+    localStorage.removeItem('salesData');
+  }, []);
 
-  const updateFilter = (key: keyof Filters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
+  // Exporta dados filtrados para Excel
+  const exportExcel = useCallback(() => {
+    if (filteredData.length === 0) return;
 
-  React.useEffect(() => {
-    applyFilters();
-  }, [applyFilters]);
+    const wb = XLSX.utils.book_new();
+    const headers = [['Product', 'Region', 'Seller', 'Date', 'Total', 'Quantity']];
+    const rows = filteredData.map((r) => [
+      r.Product,
+      r.Region,
+      r.Seller,
+      r.Date,
+      r.Total,
+      r.Quantity,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendas');
+    XLSX.writeFile(wb, 'vendas_filtradas.xlsx');
+  }, [filteredData]);
 
-  const COLORS = ['#8B5CF6', '#3B82F6', '#06B6D4', '#10B981', '#F59E0B'];
+  const glassKpi =
+    'backdrop-blur-xl bg-white/30 border border-white/40 rounded-2xl p-6 shadow-xl shadow-black/10 hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-300 text-center';
+  const glassCard =
+    'backdrop-blur-xl bg-white/20 border border-white/30 rounded-3xl shadow-2xl shadow-indigo-500/10 hover:shadow-indigo-500/20 transition-all duration-300 p-8';
+  const glassFilter =
+    'backdrop-blur-xl bg-white/20 border border-white/30 rounded-2xl shadow-xl shadow-indigo-500/10 p-6 hover:shadow-xl hover:shadow-purple-500/20 transition-all duration-300';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-blue-900 p-4 sm:p-8 text-white">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-12">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent mb-4">
-            Premium Dashboard
-          </h1>
-          <p className="text-xl opacity-90">Advanced analytics with glassmorphism design</p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-          <input
-            type="file"
-            onChange={handleFile}
-            className="hidden"
-            id="file-upload"
-            accept=".xlsx,.xls"
-          />
-          <label
-            htmlFor="file-upload"
-            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-purple-500 hover:to-indigo-600 text-white px-8 py-4 rounded-2xl font-semibold shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm border border-white/20 cursor-pointer text-center"
-          >
-            {loading ? 'Loading...' : '📁 Import Excel'}
-          </label>
-          <button
-            onClick={exportExcel}
-            disabled={filteredData.length === 0}
-            className="bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-blue-500 hover:to-indigo-600 text-white px-8 py-4 rounded-2xl font-semibold shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-          >
-            💾 Export Excel
-          </button>
-          <button
-            onClick={clearData}
-            className="bg-gradient-to-r from-purple-500 to-red-600 hover:from-red-500 hover:to-purple-600 text-white px-8 py-4 rounded-2xl font-semibold shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm border border-white/20"
-          >
-            🗑️ Clear Data
-          </button>
-        </div>
-
-        {/* Last Update */}
-        <div className="text-center mb-12">
-          <p className="text-lg opacity-80">⏰ Last Update: <span className="font-semibold text-blue-300">{lastUpdate}</span></p>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="max-w-7xl mx-auto mb-16">
-        <h2 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Key Performance Indicators</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl mb-4">💰</div>
-            <h3 className="text-xl font-semibold mb-2">Total Sales</h3>
-            <p className="text-3xl font-bold text-blue-300">${kpis.totalSales.toLocaleString()}</p>
-          </div>
-          <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl mb-4">📦</div>
-            <h3 className="text-xl font-semibold mb-2">Total Orders</h3>
-            <p className="text-3xl font-bold text-purple-300">{kpis.totalOrders.toLocaleString()}</p>
-          </div>
-          <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl mb-4">💵</div>
-            <h3 className="text-xl font-semibold mb-2">Avg Order Value</h3>
-            <p className="text-3xl font-bold text-indigo-300">${kpis.avgOrderValue.toLocaleString()}</p>
-          </div>
-          <div className="relative bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl mb-4">🏆</div>
-            <h3 className="text-xl font-semibold mb-2">Top Product</h3>
-            <p className="text-lg font-bold text-green-300">{kpis.topProduct}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="max-w-4xl mx-auto mb-16">
-        <details className="relative bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300">
-          <summary className="text-2xl font-bold mb-6 cursor-pointer list-none select-none bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
-            ⚙️ Filters
-          </summary>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-            <div>
-              <label className="block text-sm font-semibold mb-2">Date From</label>
-              <input
-                type="date"
-                value={filters.dateFrom}
-                onChange={(e) => updateFilter('dateFrom', e.target.value)}
-                className="w-full p-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-gray-300 focus:outline-none focus:border-blue-400 transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">Date To</label>
-              <input
-                type="date"
-                value={filters.dateTo}
-                onChange={(e) => updateFilter('dateTo', e.target.value)}
-                className="w-full p-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white placeholder-gray-300 focus:outline-none focus:border-blue-400 transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-2">Product</label>
-              <select
-                value={filters.product}
-                onChange={(e) => updateFilter('product', e.target.value)}
-                className="w-full p-3 bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl text-white focus:outline-none focus:border-blue-400 transition-all"
-              >
-                <option value="">All Products</option>
-                {[...new Set(data.map(d => d.Product))].map(p => (
-                  <option key={p} value={p as string}>{p}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </details>
-      </div>
-
-      {/* Charts */}
-      <div className="max-w-6xl mx-auto space-y-16 mb-16">
-        <div>
-          <h3 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Sales Over Time</h3>
-          <div className="h-96 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={salesOverTime}>
-                <CartesianGrid strokeDasharray="5 5" strokeOpacity={0.3} />
-                <XAxis dataKey="date" stroke="white" />
-                <YAxis stroke="white" />
-                <Tooltip />
-                <Line type="monotone" dataKey="sales" stroke="#8B5CF6" strokeWidth={3} dot={{ fill: '#8B5CF6' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Top Products</h3>
-          <div className="h-96 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topProducts}>
-                <CartesianGrid strokeDasharray="5 5" strokeOpacity={0.3} />
-                <XAxis dataKey="product" stroke="white" angle={-45} textAnchor="end" height={80} />
-                <YAxis stroke="white" />
-                <Tooltip />
-                <Bar dataKey="sales">
-                  {topProducts.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Sales by Category</h3>
-          <div className="h-96 bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-8 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                  nameKey="name"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Table */}
+    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <h3 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Data Table</h3>
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl overflow-hidden">
+        {/* Cabeçalho com botões */}
+        <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center mb-12">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
+            Dashboard de Vendas
+          </h1>
+          <div className="flex flex-wrap gap-3">
+            <label className="px-6 py-3 bg-white/80 backdrop-blur-sm border border-white/50 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer font-medium">
+              Upload Excel
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+            <button
+              onClick={clearData}
+              className="px-6 py-3 bg-gradient-to-r from-red-400 to-red-500 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
+            >
+              Limpar Dados
+            </button>
+            <button
+              onClick={exportExcel}
+              disabled={filteredData.length === 0}
+              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Exportar Excel
+            </button>
+            <Link
+              href="/fechamento"
+              className="px-8 py-4 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 hover:from-blue-600 hover:via-indigo-600 hover:to-purple-700 text-white font-bold rounded-3xl shadow-2xl hover:shadow-3xl hover:-translate-y-1 transition-all duration-300 text-lg border-2 border-white/20"
+            >
+              📊 Ir para Fechamento Mensal
+            </Link>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+          <div className={glassKpi}>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-blue-600 mb-2">
+              {kpis.totalVendas.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </div>
+            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
+              Total Vendas
+            </div>
+          </div>
+          <div className={glassKpi}>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-green-600 mb-2">
+              {kpis.totalPedidos.toLocaleString()}
+            </div>
+            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
+              Total Pedidos
+            </div>
+          </div>
+          <div className={glassKpi}>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-purple-600 mb-2">
+              {kpis.ticketMedio.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </div>
+            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
+              Ticket Médio
+            </div>
+          </div>
+          <div className={glassKpi}>
+            <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-indigo-600 mb-2 truncate max-w-[150px] mx-auto">
+              {kpis.produtoTop}
+            </div>
+            <div className="text-sm opacity-75 uppercase tracking-wide text-gray-700">
+              Produto Top
+            </div>
+          </div>
+        </div>
+
+        {/* Filtros colapsáveis */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-16">
+          {/* Filtro Período */}
+          <div className={glassFilter}>
+            <button
+              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
+              onClick={() => toggleFilter('period')}
+            >
+              <span className="font-semibold text-lg">Período</span>
+              <svg
+                className={`w-6 h-6 transition-transform duration-300 ${
+                  filterOpen.period ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterOpen.period && (
+              <div className="space-y-3">
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => updateFilters({ startDate: e.target.value })}
+                  className="w-full p-3 border border-white/30 rounded-xl bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                />
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => updateFilters({ endDate: e.target.value })}
+                  className="w-full p-3 border border-white/30 rounded-xl bg-white/50 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Filtro Região */}
+          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
+            <button
+              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
+              onClick={() => toggleFilter('region')}
+            >
+              <span className="font-semibold text-lg">Região</span>
+              <svg
+                className={`w-6 h-6 transition-transform duration-300 ${
+                  filterOpen.region ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterOpen.region && (
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+                {uniqueRegions.map((region) => (
+                  <label
+                    key={region}
+                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filters.regions.includes(region)}
+                      onChange={(e) => {
+                        const newRegions = e.target.checked
+                          ? [
+                              ...filters.regions,
+                              region,
+                            ].filter((r, i, a) => a.indexOf(r) === i)
+                          : filters.regions.filter((r) => r !== region);
+                        updateFilters({ regions: newRegions });
+                      }}
+                      className="mr-3 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <span className="text-gray-800 font-medium">{region}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Filtro Produto */}
+          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
+            <button
+              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
+              onClick={() => toggleFilter('product')}
+            >
+              <span className="font-semibold text-lg">Produto</span>
+              <svg
+                className={`w-6 h-6 transition-transform duration-300 ${
+                  filterOpen.product ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterOpen.product && (
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+                {uniqueProducts.map((product) => (
+                  <label
+                    key={product}
+                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filters.products.includes(product)}
+                      onChange={(e) => {
+                        const newProducts = e.target.checked
+                          ? [
+                              ...filters.products,
+                              product,
+                            ].filter((p, i, a) => a.indexOf(p) === i)
+                          : filters.products.filter((p) => p !== product);
+                        updateFilters({ products: newProducts });
+                      }}
+                      className="mr-3 w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
+                    />
+                    <span className="text-gray-800 font-medium truncate">{product}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Filtro Vendedor */}
+          <div className={glassFilter + ' lg:col-span-1 xl:col-span-1'}>
+            <button
+              className="w-full flex justify-between items-center mb-6 p-2 rounded-xl hover:bg-white/20 transition-all"
+              onClick={() => toggleFilter('seller')}
+            >
+              <span className="font-semibold text-lg">Vendedor</span>
+              <svg
+                className={`w-6 h-6 transition-transform duration-300 ${
+                  filterOpen.seller ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {filterOpen.seller && (
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+                {uniqueSellers.map((seller) => (
+                  <label
+                    key={seller}
+                    className="flex items-center p-2 rounded-xl cursor-pointer hover:bg-white/30 transition-all"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filters.sellers.includes(seller)}
+                      onChange={(e) => {
+                        const newSellers = e.target.checked
+                          ? [...filters.sellers, seller].filter((s, i, a) => a.indexOf(s) === i)
+                          : filters.sellers.filter((s) => s !== seller);
+                        updateFilters({ sellers: newSellers });
+                      }}
+                      className="mr-3 w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2"
+                    />
+                    <span className="text-gray-800 font-medium truncate">{seller}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Gráficos em coluna, um abaixo do outro */}
+        <div className="space-y-16 mb-16">
+          {/* Evolução de Vendas por Data */}
+          <section>
+            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent drop-shadow-lg">
+              Evolução de Vendas por Data
+            </h2>
+            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="white/30" />
+                  <XAxis dataKey="date" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip
+                    formatter={(value: number) =>
+                      [`R$ ${value.toLocaleString('pt-BR')}`, 'Vendas']
+                    }
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#3B82F6"
+                    strokeWidth={4}
+                    dot={{ fill: '#3B82F6', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* Volume por Produto */}
+          <section>
+            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent drop-shadow-lg">
+              Volume por Produto
+            </h2>
+            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="white/30" />
+                  <XAxis dataKey="product" stroke="#64748b" angle={-45} height={80} />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip />
+                  <Bar dataKey="quantity" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* Distribuição por Região */}
+          <section>
+            <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent drop-shadow-lg">
+              Distribuição por Região
+            </h2>
+            <div className={`${glassCard} h-[350px] sm:h-[400px] lg:h-[450px]`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </div>
+
+        {/* Tabela responsiva */}
+        <div className={`${glassCard} overflow-hidden shadow-3xl`}>
+          <h2 className="text-3xl font-bold p-8 border-b border-white/20 bg-white/10 text-gray-800">
+            Dados de Vendas
+          </h2>
           <div className="overflow-x-auto">
-            <table className="w-full table-auto">
-              <thead>
-                <tr className="bg-white/20">
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Date</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Product</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Category</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Quantity</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Price</th>
-                  <th className="px-6 py-4 text-left text-sm font-bold uppercase tracking-wider text-white">Total</th>
+            <table className="w-full divide-y divide-white/10">
+              <thead className="bg-white/20 backdrop-blur-sm">
+                <tr>
+                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Produto
+                  </th>
+                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Região
+                  </th>
+                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Vendedor
+                  </th>
+                  <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Data
+                  </th>
+                  <th className="px-8 py-6 text-right text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Total
+                  </th>
+                  <th className="px-8 py-6 text-right text-xl font-bold text-gray-800 uppercase tracking-wider">
+                    Quantidade
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/20">
+              <tbody className="divide-y divide-white/10 bg-white/10">
                 {filteredData.map((row, index) => (
-                  <tr key={index} className="hover:bg-white/10 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white font-medium">{row.Date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{row.Product}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{row.Category}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{row.Quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">${row.Price.toFixed(2)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-300">${row.Total.toFixed(2)}</td>
+                  <tr
+                    key={index}
+                    className="hover:bg-white/30 transition-all duration-200"
+                  >
+                    <td className="px-8 py-6 whitespace-nowrap text-lg font-semibold text-gray-800">
+                      {row.Product}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-lg text-gray-700">
+                      {row.Region}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-lg text-gray-700">
+                      {row.Seller}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-lg font-mono text-gray-700">
+                      {row.Date}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-right text-2xl font-bold text-blue-600">
+                      R$ {row.Total.toLocaleString('pt-BR')}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-right text-xl font-mono text-purple-600">
+                      {row.Quantity.toLocaleString('pt-BR')}
+                    </td>
                   </tr>
                 ))}
                 {filteredData.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-lg text-gray-300">No data available</td>
+                    <td
+                      colSpan={6}
+                      className="px-8 py-20 text-center text-2xl text-gray-500 font-medium"
+                    >
+                      Nenhum dado para exibir. Faça upload de um arquivo Excel.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -361,7 +675,7 @@ const Page: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 };
 
