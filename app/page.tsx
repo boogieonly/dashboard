@@ -1,495 +1,195 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
+import { useState, useEffect } from 'react';
+import FechamentoMensal from './componentes/FechamentoMensal';
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
+  BarChart,
+  Bar,
+  ResponsiveContainer
 } from 'recharts';
 
-type DataRow = {
+type DataPoint = {
+  name: string;
+  vendas: number;
+  lucro: number;
   data: string;
-  regiao: string;
-  produto: string;
-  vendedor: string;
-  material: string;
-  peso: number;
-  valor: number;
 };
 
-type Filtros = {
-  fromDate: string;
-  toDate: string;
-  regiao: string;
-  produto: string;
-  vendedor: string;
-  material: string;
-};
+const initialData: DataPoint[] = [
+  { name: 'Jan 2024', vendas: 400, lucro: 240, data: '2024-01-01' },
+  { name: 'Fev 2024', vendas: 300, lucro: 139, data: '2024-02-01' },
+  { name: 'Mar 2024', vendas: 200, lucro: 380, data: '2024-03-01' },
+  { name: 'Abr 2024', vendas: 278, lucro: 390, data: '2024-04-01' },
+  { name: 'Mai 2024', vendas: 189, lucro: 200, data: '2024-05-01' },
+  { name: 'Jun 2024', vendas: 239, lucro: 380, data: '2024-06-01' },
+  { name: 'Jul 2024', vendas: 349, lucro: 430, data: '2024-07-01' },
+];
 
-type TopMaterial = {
-  material: string;
-  peso: number;
-};
+export default function DashboardPage() {
+  const [startDate, setStartDate] = useState('2024-01-01');
+  const [endDate, setEndDate] = useState('2024-12-31');
+  const [filteredData, setFilteredData] = useState<DataPoint[]>(initialData);
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#912EFF'];
-
-const GlassPane: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '' }) => (
-  <div className={`bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl shadow-black/20 ${className}`}>
-    {children}
-  </div>
-);
-
-const Page: React.FC = () => {
-  const [data, setData] = useState<DataRow[]>([]);
-  const [regioes, setRegioes] = useState<string[]>([]);
-  const [produtos, setProdutos] = useState<string[]>([]);
-  const [vendedores, setVendedores] = useState<string[]>([]);
-  const [materiais, setMateriais] = useState<string[]>([]);
-  const [filtros, setFiltros] = useState<Filtros>({
-    fromDate: '',
-    toDate: '',
-    regiao: '',
-    produto: '',
-    vendedor: '',
-    material: '',
-  });
-
-  // Carregar dados do localStorage
   useEffect(() => {
-    const savedData = localStorage.getItem('dadosDashboard');
-    if (savedData) {
-      const parsedData = JSON.parse(savedData) as DataRow[];
-      setData(parsedData);
-    }
-
-    const savedFiltros = localStorage.getItem('filtrosDashboard');
-    if (savedFiltros) {
-      setFiltros(JSON.parse(savedFiltros) as Filtros);
-    }
-  }, []);
-
-  // Salvar filtros no localStorage
-  useEffect(() => {
-    localStorage.setItem('filtrosDashboard', JSON.stringify(filtros));
-  }, [filtros]);
-
-  // Extrair opções únicas dos filtros
-  useEffect(() => {
-    if (data.length === 0) return;
-    setRegioes([...new Set(data.map((d) => d.regiao))].sort());
-    setProdutos([...new Set(data.map((d) => d.produto))].sort());
-    setVendedores([...new Set(data.map((d) => d.vendedor))].sort());
-    setMateriais([...new Set(data.map((d) => d.material))].sort());
-  }, [data]);
-
-  const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json<DataRow>(worksheet);
-
-    setData(jsonData as DataRow[]);
-    localStorage.setItem('dadosDashboard', JSON.stringify(jsonData));
-  }, []);
-
-  const limparFiltros = () => {
-    setFiltros({
-      fromDate: '',
-      toDate: '',
-      regiao: '',
-      produto: '',
-      vendedor: '',
-      material: '',
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const filtered = initialData.filter((item) => {
+      const itemDate = new Date(item.data);
+      return itemDate >= start && itemDate <= end;
     });
-  };
+    setFilteredData(filtered);
+  }, [startDate, endDate]);
 
-  const filteredData = useMemo(() => {
-    return data.filter((row) => {
-      const rowDate = new Date(row.data);
-      if (filtros.fromDate && rowDate < new Date(filtros.fromDate)) return false;
-      if (filtros.toDate && rowDate > new Date(filtros.toDate)) return false;
-      if (filtros.regiao && row.regiao !== filtros.regiao) return false;
-      if (filtros.produto && row.produto !== filtros.produto) return false;
-      if (filtros.vendedor && row.vendedor !== filtros.vendedor) return false;
-      if (filtros.material && row.material !== filtros.material) return false;
-      return true;
-    });
-  }, [data, filtros]);
-
-  const pesoTotal = useMemo(
-    () => filteredData.reduce((sum, row) => sum + row.peso, 0),
-    [filteredData]
-  );
-
-  const valorTotal = useMemo(
-    () => filteredData.reduce((sum, row) => sum + row.valor, 0),
-    [filteredData]
-  );
-
-  const topMateriais = useMemo((): TopMaterial[] => {
-    const map: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      map[row.material] = (map[row.material] || 0) + row.peso;
-    });
-    return Object.entries(map)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([material, peso]) => ({ material, peso }));
-  }, [filteredData]);
-
-  const barData = useMemo(
-    () =>
-      regioes.map((regiao) => ({
-        regiao,
-        volume: filteredData
-          .filter((row) => row.regiao === regiao)
-          .reduce((sum, row) => sum + row.peso, 0),
-      })),
-    [filteredData, regioes]
-  );
-
-  const getMesKey = (dataStr: string): string => new Date(dataStr).toISOString().slice(0, 7);
-
-  const lineData = useMemo(() => {
-    const map: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      const mes = getMesKey(row.data);
-      map[mes] = (map[mes] || 0) + row.valor;
-    });
-    return Object.keys(map)
-      .sort()
-      .map((mes) => ({ mes, faturamento: map[mes] }));
-  }, [filteredData]);
-
-  const pieData = useMemo(
-    () =>
-      regioes
-        .map((regiao) => ({
-          name: regiao,
-          value: filteredData
-            .filter((row) => row.regiao === regiao)
-            .reduce((sum, row) => sum + row.peso, 0),
-        }))
-        .filter((d) => d.value > 0),
-    [filteredData, regioes]
-  );
-
-  if (data.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 flex flex-col items-center justify-center p-8">
-        <GlassPane className="text-center max-w-md">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-8">Dashboard Premium</h1>
-          <p className="text-white/80 mb-8 text-lg">Faça upload do arquivo Excel para visualizar o dashboard.</p>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFile}
-            className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-2xl px-8 py-4 text-white text-lg font-medium w-full cursor-pointer file:mr-6 file:py-3 file:px-6 file:rounded-xl file:border-0 file:bg-white/30 file:backdrop-blur-sm file:text-white file:font-semibold file:transition-all hover:file:bg-white/40 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all"
-          />
-        </GlassPane>
-      </div>
-    );
-  }
+  const totalVendas = filteredData.reduce((sum, item) => sum + item.vendas, 0);
+  const totalLucro = filteredData.reduce((sum, item) => sum + item.lucro, 0);
+  const qtdMeses = filteredData.length;
+  const avgLucro = qtdMeses > 0 ? Math.round(totalLucro / qtdMeses) : 0;
 
   return (
-    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-indigo-900 via-purple-900/50 to-pink-800/80 overflow-hidden">
-      <header className="text-center mb-12">
-        <GlassPane className="max-w-4xl mx-auto">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent mb-4">
-            Dashboard Premium
-          </h1>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFile}
-            className="mx-auto bg-white/20 backdrop-blur-sm border border-white/30 rounded-2xl px-6 py-3 text-white font-medium w-full max-w-md cursor-pointer file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-white/30 file:backdrop-blur-sm file:text-white/90 hover:file:bg-white/40 file:transition-all focus:outline-none focus:ring-2 focus:ring-white/50 transition-all"
-          />
-        </GlassPane>
-      </header>
-
-      {/* Filtros */}
-      <section className="max-w-7xl mx-auto mb-12">
-        <GlassPane>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 p-4">
+    <main className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 p-6 md:p-12 overflow-hidden">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-12 gap-6">
+          <div>
+            <h1 className="text-4xl md:text-5xl font-bold text-white mb-2 drop-shadow-2xl">
+              Dashboard Financeiro
+            </h1>
+            <p className="text-white/70 text-lg drop-shadow-xl">Visão geral das vendas e lucros mensais</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4">
             <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">Período Inicial</label>
+              <label className="block text-white/80 mb-2 font-medium">Data Inicial</label>
               <input
                 type="date"
-                value={filtros.fromDate}
-                onChange={(e) => setFiltros({ ...filtros, fromDate: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/40 w-full transition-all"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-white/10 backdrop-blur-xl border border-white/20 px-4 py-3 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent w-full sm:w-48 transition-all duration-300"
               />
             </div>
             <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">Período Final</label>
+              <label className="block text-white/80 mb-2 font-medium">Data Final</label>
               <input
                 type="date"
-                value={filtros.toDate}
-                onChange={(e) => setFiltros({ ...filtros, toDate: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/40 w-full transition-all"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-white/10 backdrop-blur-xl border border-white/20 px-4 py-3 rounded-2xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent w-full sm:w-48 transition-all duration-300"
               />
-            </div>
-            <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">Região</label>
-              <select
-                value={filtros.regiao}
-                onChange={(e) => setFiltros({ ...filtros, regiao: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white w-full focus:outline-none focus:ring-2 focus:ring-white/40 transition-all"
-              >
-                <option value="">Todas</option>
-                {regioes.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">Produto</label>
-              <select
-                value={filtros.produto}
-                onChange={(e) => setFiltros({ ...filtros, produto: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white w-full focus:outline-none focus:ring-2 focus:ring-white/40 transition-all"
-              >
-                <option value="">Todos</option>
-                {produtos.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-white/90 text-sm font-medium mb-2">Vendedor</label>
-              <select
-                value={filtros.vendedor}
-                onChange={(e) => setFiltros({ ...filtros, vendedor: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white w-full focus:outline-none focus:ring-2 focus:ring-white/40 transition-all"
-              >
-                <option value="">Todos</option>
-                {vendedores.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end gap-2">
-              <label className="block text-white/90 text-sm font-medium mb-2">Material</label>
-              <select
-                value={filtros.material}
-                onChange={(e) => setFiltros({ ...filtros, material: e.target.value })}
-                className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-xl px-4 py-3 text-white w-full focus:outline-none focus:ring-2 focus:ring-white/40 transition-all flex-1"
-              >
-                <option value="">Todos</option>
-                {materiais.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={limparFiltros}
-                className="bg-white/30 hover:bg-white/40 backdrop-blur-sm border border-white/30 rounded-xl px-6 py-3 text-white font-semibold transition-all hover:shadow-lg ml-2 whitespace-nowrap"
-              >
-                Limpar
-              </button>
             </div>
           </div>
-        </GlassPane>
-      </section>
+        </div>
 
-      <div className="max-w-7xl mx-auto space-y-8 lg:space-y-12">
         {/* KPIs */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-          <GlassPane>
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Peso Total</h2>
-            <div className="text-4xl md:text-6xl lg:text-7xl font-black text-green-400">
-              {pesoTotal.toLocaleString('pt-BR')}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:scale-[1.02] group">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-2xl">💰</span>
+              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
             </div>
-            <p className="text-white/70 mt-2 text-lg">kg</p>
-          </GlassPane>
-          <GlassPane>
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Valor Total</h2>
-            <div className="text-4xl md:text-6xl lg:text-7xl font-black text-blue-400">
-              R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            <h3 className="text-3xl lg:text-4xl font-bold text-white mb-1 drop-shadow-xl group-hover:text-green-400 transition-colors">
+              R$ {totalVendas.toLocaleString()}
+            </h3>
+            <p className="text-white/70 text-sm uppercase tracking-wide">Total Vendas</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:scale-[1.02]">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-2xl">📈</span>
+              <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse"></div>
             </div>
-          </GlassPane>
-        </section>
+            <h3 className="text-3xl lg:text-4xl font-bold text-white mb-1 drop-shadow-xl group-hover:text-blue-400 transition-colors">
+              R$ {totalLucro.toLocaleString()}
+            </h3>
+            <p className="text-white/70 text-sm uppercase tracking-wide">Total Lucro</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:scale-[1.02]">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-2xl">📊</span>
+              <div className="w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
+            </div>
+            <h3 className="text-3xl lg:text-4xl font-bold text-white mb-1 drop-shadow-xl group-hover:text-purple-400 transition-colors">
+              {qtdMeses}
+            </h3>
+            <p className="text-white/70 text-sm uppercase tracking-wide">Meses Analisados</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:scale-[1.02]">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-2xl">⚡</span>
+              <div className="w-3 h-3 bg-yellow-400 rounded-full animate-pulse"></div>
+            </div>
+            <h3 className="text-3xl lg:text-4xl font-bold text-white mb-1 drop-shadow-xl group-hover:text-yellow-400 transition-colors">
+              R$ {avgLucro.toLocaleString()}
+            </h3>
+            <p className="text-white/70 text-sm uppercase tracking-wide">Lucro Médio</p>
+          </div>
+        </div>
 
-        {/* Cards Materiais */}
-        <section>
-          <GlassPane>
-            <h2 className="text-3xl font-bold text-white mb-8">Top 5 Materiais (Peso)</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-              {topMateriais.map(({ material, peso }, index) => (
-                <div key={material} className="bg-white/20 backdrop-blur-sm border border-white/30 rounded-2xl p-6 text-center hover:scale-105 transition-all hover:shadow-2xl hover:shadow-blue-500/25">
-                  <h3 className="text-xl font-semibold text-white mb-2 truncate">{material}</h3>
-                  <div className="text-2xl md:text-3xl font-black text-green-400">
-                    {peso.toLocaleString('pt-BR')}
-                  </div>
-                  <p className="text-white/70 text-sm">kg</p>
-                </div>
-              ))}
-            </div>
-          </GlassPane>
-        </section>
-
-        {/* Gráficos */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-          <GlassPane>
-            <h2 className="text-3xl font-bold text-white mb-8 text-center">Volume por Região (BarChart)</h2>
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-6 drop-shadow-xl">Vendas Mensais (Linha)</h2>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
-                <XAxis dataKey="regiao" stroke="white" />
+              <LineChart data={filteredData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <XAxis dataKey="name" stroke="white" />
                 <YAxis stroke="white" />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="volume" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          </GlassPane>
-          <GlassPane>
-            <h2 className="text-3xl font-bold text-white mb-8 text-center">Evolução do Faturamento (LineChart)</h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={lineData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
-                <XAxis dataKey="mes" stroke="white" />
-                <YAxis stroke="white" />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="faturamento" stroke="#8884d8" strokeWidth={3} />
+                <Line type="monotone" dataKey="vendas" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981', strokeWidth: 2 }} />
               </LineChart>
             </ResponsiveContainer>
-          </GlassPane>
-        </section>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-6 drop-shadow-xl">Vendas vs Lucro (Barra)</h2>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={filteredData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <XAxis dataKey="name" stroke="white" />
+                <YAxis stroke="white" />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="vendas" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="lucro" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
-        <section>
-          <GlassPane>
-            <h2 className="text-3xl font-bold text-white mb-8 text-center">Distribuição de Fluxo por Região (PieChart)</h2>
-            <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-              <ResponsiveContainer width="100%" maxWidth={500} height={400}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="text-white text-lg md:text-xl">
-                <p>Total Fluxo: <span className="font-bold text-green-400">{pesoTotal.toLocaleString('pt-BR')} kg</span></p>
-              </div>
-            </div>
-          </GlassPane>
-        </section>
+        {/* Tabela Responsiva */}
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-hidden">
+          <h2 className="text-2xl font-bold text-white mb-6 drop-shadow-xl">Dados Detalhados</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-white">
+              <thead>
+                <tr className="border-b border-white/20">
+                  <th className="text-left p-4 font-semibold uppercase tracking-wide text-white/80">Mês</th>
+                  <th className="text-right p-4 font-semibold uppercase tracking-wide text-white/80">Vendas (R$)</th>
+                  <th className="text-right p-4 font-semibold uppercase tracking-wide text-white/80">Lucro (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredData.map((item, index) => (
+                  <tr key={index} className="border-b border-white/10 hover:bg-white/5 transition-colors">
+                    <td className="p-4 font-medium">{item.name}</td>
+                    <td className="p-4 text-right font-mono">{item.vendas.toLocaleString()}</td>
+                    <td className="p-4 text-right font-mono text-green-400">{item.lucro.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        {/* Tabela */}
-        <section>
-          <GlassPane>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-3xl font-bold text-white">Dados Filtrados ({filteredData.length})</h2>
-            </div>
-            {filteredData.length === 0 ? (
-              <p className="text-center text-white/70 text-xl py-12">Nenhum dado encontrado com os filtros aplicados.</p>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/10">
-                <table className="w-full text-sm md:text-base">
-                  <thead>
-                    <tr className="bg-white/5 backdrop-blur-sm border-b border-white/20">
-                      <th className="px-4 py-4 text-left font-semibold text-white">Data</th>
-                      <th className="px-4 py-4 text-left font-semibold text-white hidden md:table-cell">Região</th>
-                      <th className="px-4 py-4 text-left font-semibold text-white hidden lg:table-cell">Produto</th>
-                      <th className="px-4 py-4 text-left font-semibold text-white hidden xl:table-cell">Vendedor</th>
-                      <th className="px-4 py-4 text-left font-semibold text-white">Material</th>
-                      <th className="px-4 py-4 text-right font-semibold text-white">Peso</th>
-                      <th className="px-4 py-4 text-right font-semibold text-white hidden md:table-cell">Valor</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredData.slice(0, 50).map((row, index) => (  // Limite para performance
-                      <tr key={`${row.data}-${row.vendedor}-${index}`} className="border-b border-white/10 hover:bg-white/10 transition-all">
-                        <td className="px-4 py-4 text-white/90 font-medium">{row.data}</td>
-                        <td className="px-4 py-4 text-white/80 hidden md:table-cell">{row.regiao}</td>
-                        <td className="px-4 py-4 text-white/80 hidden lg:table-cell truncate max-w-[120px]">{row.produto}</td>
-                        <td className="px-4 py-4 text-white/80 hidden xl:table-cell truncate max-w-[100px]">{row.vendedor}</td>
-                        <td className="px-4 py-4 text-white/90 truncate max-w-[150px]">{row.material}</td>
-                        <td className="px-4 py-4 text-right text-green-400 font-semibold">
-                          {row.peso.toLocaleString('pt-BR')}
-                        </td>
-                        <td className="px-4 py-4 text-right text-blue-400 font-semibold hidden md:table-cell">
-                          R$ {row.valor.toLocaleString('pt-BR')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </GlassPane>
-        </section>
-
-        {/* Fechamento Mensal */}
-        <section>
-          <FechamentoMensal />
-        </section>
+        {/* Integração FechamentoMensal */}
+        <div className="mt-12">
+          <FechamentoMensal data={filteredData} />
+        </div>
       </div>
-    </div>
+    </main>
   );
-};
-
-const FechamentoMensal: React.FC = () => (
-  <GlassPane className="text-center">
-    <h2 className="text-4xl font-bold text-white mb-6 bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text text-transparent">
-      Fechamento Mensal
-    </h2>
-    <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
-      Resumo consolidado do período. Todos os KPIs e análises estão atualizados com os dados filtrados.
-    </p>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-      <div className="bg-white/20 p-6 rounded-2xl">
-        <p className="text-white/70">Registros Totais</p>
-        <p className="text-3xl font-bold text-white">{data.length}</p>
-      </div>
-      <div className="bg-white/20 p-6 rounded-2xl">
-        <p className="text-white/70">Média Peso</p>
-        <p className="text-3xl font-bold text-green-400">
-          {(pesoTotal / filteredData.length || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-        </p>
-      </div>
-      <div className="bg-white/20 p-6 rounded-2xl">
-        <p className="text-white/70">Média Valor</p>
-        <p className="text-3xl font-bold text-blue-400">
-          R$ {(valorTotal / filteredData.length || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
-        </p>
-      </div>
-    </div>
-  </GlassPane>
-);
-
-export default Page;
+}
