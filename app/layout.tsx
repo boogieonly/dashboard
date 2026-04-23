@@ -1,106 +1,124 @@
-'use client';
-
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import Head from 'next/head';
+import { Inter } from 'next/font/google';
 
-type RootLayoutProps = {
-  children: React.ReactNode;
-};
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  display: 'swap',
+  variable: '--font-inter'
+});
 
-const navLinks = [
-  { href: '/', label: 'Dashboard 📊' },
-  { href: '/fechamento', label: 'Fechamento Mensal 💰' },
-];
+interface NavbarProps {
+  isMenuOpen: boolean;
+  setIsMenuOpen: (open: boolean) => void;
+}
 
-export default function RootLayout({ children }: RootLayoutProps) {
-  const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const toggleMenu = () => setIsOpen(!isOpen);
-
+function Navbar({ isMenuOpen, setIsMenuOpen }: NavbarProps) {
   return (
-    <html lang="pt-BR">
-      <body className="bg-gradient-to-br from-gray-900 via-blue-900/30 to-purple-900/30 min-h-screen antialiased">
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-indigo-600/20 backdrop-blur-xl border-b border-white/20 shadow-2xl drop-shadow-2xl">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              {/* Logo */}
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/10 backdrop-blur-xl border-b border-white/20 shadow-2xl transition-all duration-500 ease-in-out">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-28">
+          {/* Logo */}
+          <Link href="/" className="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-300 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-lg hover:scale-105 transition-transform duration-300">
+            Metalfama
+          </Link>
+
+          {/* Desktop Navigation */}
+          <ul className="hidden md:flex items-center space-x-8">
+            <li>
               <Link
                 href="/"
-                className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent hover:scale-105 hover:rotate-1 transition-all duration-300 ease-in-out flex items-center gap-2"
+                className="text-white/80 hover:text-white font-semibold text-lg transition-all duration-300 hover:underline decoration-2 underline-offset-4"
               >
-                Metalfama 🏭
+                Home
               </Link>
-
-              {/* Desktop Navigation */}
-              <div className="hidden md:flex items-center space-x-2 lg:space-x-8">
-                {navLinks.map(({ href, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={`px-4 py-2 rounded-xl font-medium transition-all duration-300 ease-in-out flex items-center gap-2 ${
-                      pathname === href
-                        ? 'bg-white/30 backdrop-blur-sm shadow-lg scale-105 border border-white/30'
-                        : 'hover:bg-white/20 hover:scale-105 hover:shadow-lg hover:border-white/30 border border-transparent'
-                    }`}
-                  >
-                    <span>{label}</span>
-                  </Link>
-                ))}
-              </div>
-
-              {/* Hamburger Button */}
-              <button
-                onClick={toggleMenu}
-                className="md:hidden p-2 rounded-xl hover:bg-white/20 transition-all duration-300 hover:scale-110"
-                aria-label="Toggle menu"
+            </li>
+            <li>
+              <Link
+                href="/fechamento"
+                className="text-white/80 hover:text-white font-semibold text-lg transition-all duration-300 hover:underline decoration-2 underline-offset-4"
               >
-                <svg
-                  className="w-6 h-6 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'}
-                  />
-                </svg>
-              </button>
-            </div>
+                Fechamento
+              </Link>
+            </li>
+          </ul>
 
-            {/* Mobile Menu */}
-            <div
-              className={`md:hidden overflow-hidden transition-all duration-500 ease-in-out ${
-                isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
-              }`}
-            >
-              <div className="bg-gradient-to-r from-blue-500/30 via-purple-500/30 to-indigo-600/30 backdrop-blur-xl border-b border-white/20 pt-4 pb-6 shadow-2xl">
-                <div className="flex flex-col space-y-4 px-4">
-                  {navLinks.map(({ href, label }) => (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={() => setIsOpen(false)}
-                      className={`block px-6 py-3 rounded-2xl font-semibold text-lg transition-all duration-300 flex items-center gap-3 ${
-                        pathname === href
-                          ? 'bg-white/40 backdrop-blur-sm shadow-xl scale-105 border-2 border-white/40'
-                          : 'hover:bg-white/30 hover:scale-105 hover:shadow-xl hover:border-white/30 border border-transparent'
-                      }`}
-                    >
-                      {label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </nav>
+          {/* Hamburger Button */}
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="md:hidden p-1 flex flex-col justify-center items-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 transition-all duration-300"
+            aria-label="Toggle menu"
+          >
+            {!isMenuOpen ? (
+              <svg className="w-6 h-6 stroke-white transition-transform duration-300" fill="none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6 stroke-white transition-transform duration-300 rotate-180" fill="none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+          </button>
+        </div>
 
-        <main className="pt-16 lg:pt-20">
+        {/* Mobile Menu */}
+        <div
+          className={`md:hidden overflow-hidden transition-all duration-500 ease-in-out ${
+            isMenuOpen
+              ? 'max-h-96 opacity-100 py-6 border-t border-white/20 bg-white/10 backdrop-blur-xl'
+              : 'max-h-0 opacity-0 py-0'
+          }`}
+        >
+          <ul className="flex flex-col space-y-4 px-4">
+            <li>
+              <Link
+                href="/"
+                className="block py-3 px-4 text-lg font-semibold text-white/90 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-300"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Home
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/fechamento"
+                className="block py-3 px-4 text-lg font-semibold text-white/90 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-300"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Fechamento
+              </Link>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default function RootLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  return (
+    <html lang="pt-BR" className={inter.className}>
+      <Head>
+        <title>Metalfama</title>
+        <meta name="description" content="Plataforma premium de trading e fechamento com design glassmorphism e experiências suaves." />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="keywords" content="trading, fechamento, metalfama, premium, glassmorphism" />
+        <meta name="author" content="Metalfama" />
+        <meta name="theme-color" content="#9333ea" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      </Head>
+      <body className="bg-gradient-to-br from-slate-900 via-purple-900/30 to-slate-900 min-h-screen overflow-x-hidden antialiased font-sans">
+        <Navbar isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} />
+        <main className="pt-28">
           {children}
         </main>
       </body>
