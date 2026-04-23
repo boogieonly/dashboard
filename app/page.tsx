@@ -1,16 +1,15 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import {
+  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
-  ResponsiveContainer,
   LineChart,
   Line,
   PieChart,
@@ -18,313 +17,421 @@ import {
   Cell,
 } from 'recharts';
 
-type Row = {
-  Data: string;
-  Regiao: string;
-  Produto: string;
-  Vendedor: string;
-  Cliente: string;
-  Valor: number;
-  Peso: number;
-  Meta: number;
-  Etapa: string;
-};
-
-type Filters = {
-  produto: string;
-  regiao: string;
+type SalesData = {
+  data: string;
+  material: string;
+  volume: number;
+  faturamento: number;
   etapa: string;
 };
 
-const materials = ['Aço', 'Alumínio', 'Cobre', 'Latão', 'Inox'];
+type Filters = {
+  material: string;
+  dateFrom: string;
+  dateTo: string;
+};
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+export default function Dashboard() {
+  const [data, setData] = useState<SalesData[]>([]);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    material: '',
+    dateFrom: '',
+    dateTo: '',
+  });
 
-const glassStyle = "bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl hover:scale-[1.02] transition-all duration-300";
+  const glassClass = 'bg-white/20 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12';
+  const glassMiniClass = 'bg-white/30 backdrop-blur-lg border border-white/30 rounded-2xl shadow-xl p-6 text-center hover:scale-[1.02] transition-transform duration-200';
+  const btnClass = 'px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl hover:from-blue-600 hover:to-purple-700 shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 backdrop-blur-sm border border-white/20 inline-flex items-center gap-2';
+  const inputClass = 'w-full px-4 py-3 bg-white/20 border border-white/30 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all duration-200';
 
-const Page: React.FC = () => {
-  const [data, setData] = useState<Row[]>([]);
-  const [filters, setFilters] = useState<Filters>({ produto: '', regiao: '', etapa: '' });
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const parseDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date(NaN);
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) return new Date(NaN);
+    const [day, month, year] = parts.map(Number);
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return new Date(NaN);
+    const date = new Date(year, month - 1, day);
+    if (date.getDate() !== day || date.getMonth() !== month - 1) return new Date(NaN);
+    return date;
+  };
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const isValidDate = (date: Date): boolean => !isNaN(date.getTime());
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const arrayBuffer = event.target?.result as ArrayBuffer;
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json<Row>(sheet);
-      setData(jsonData);
-    };
-    reader.readAsArrayBuffer(file);
-  }, []);
+  const getMonthKey = (date: Date): string => {
+    if (!isValidDate(date)) return '';
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+  };
 
   const filteredData = useMemo(() => {
-    return data.filter((row) =>
-      (!filters.produto || row.Produto === filters.produto) &&
-      (!filters.regiao || row.Regiao === filters.regiao) &&
-      (!filters.etapa || row.Etapa === filters.etapa)
-    );
+    let fd = [...data];
+    if (filters.material) {
+      const search = filters.material.toLowerCase();
+      fd = fd.filter((d) => d.material.toLowerCase().includes(search));
+    }
+    if (filters.dateFrom) {
+      const from = parseDate(filters.dateFrom);
+      if (isValidDate(from)) {
+        fd = fd.filter((d) => {
+          const dDate = parseDate(d.data);
+          return isValidDate(dDate) && dDate >= from;
+        });
+      }
+    }
+    if (filters.dateTo) {
+      const to = parseDate(filters.dateTo);
+      if (isValidDate(to)) {
+        fd = fd.filter((d) => {
+          const dDate = parseDate(d.data);
+          return isValidDate(dDate) && dDate <= to;
+        });
+      }
+    }
+    return fd;
   }, [data, filters]);
 
-  const totalPeso = useMemo(() => filteredData.reduce((sum, row) => sum + row.Peso, 0), [filteredData]);
-  const totalValor = useMemo(() => filteredData.reduce((sum, row) => sum + row.Valor, 0), [filteredData]);
+  const kpis = useMemo(() => {
+    const totalVolume = filteredData.reduce((sum, d) => sum + d.volume, 0);
+    const totalFaturamento = filteredData.reduce((sum, d) => sum + d.faturamento, 0);
+    const uniqueMaterials = new Set(filteredData.map((d) => d.material)).size;
+    const totalRecords = filteredData.length;
+    return { totalVolume, totalFaturamento, uniqueMaterials, totalRecords };
+  }, [filteredData]);
 
-  const aggMaterials = useMemo(() => {
-    const agg: Record<string, { peso: number; valor: number }> = {};
-    filteredData.forEach((row) => {
-      if (!agg[row.Produto]) {
-        agg[row.Produto] = { peso: 0, valor: 0 };
+  const materialCards = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      grouped[d.material] = (grouped[d.material] || 0) + d.volume;
+    });
+    return Object.entries(grouped)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([name, volume]) => ({ name, volume }));
+  }, [filteredData]);
+
+  const volumeData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      grouped[d.material] = (grouped[d.material] || 0) + d.volume;
+    });
+    return Object.entries(grouped)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([name, volume]) => ({ name, volume: Number(volume.toFixed(0)) }));
+  }, [filteredData]);
+
+  const evolucaoData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      const date = parseDate(d.data);
+      if (isValidDate(date)) {
+        const key = getMonthKey(date);
+        grouped[key] = (grouped[key] || 0) + d.faturamento;
       }
-      agg[row.Produto].peso += row.Peso;
-      agg[row.Produto].valor += row.Valor;
     });
-    return agg;
+    return Object.entries(grouped)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }));
   }, [filteredData]);
 
-  const barData = useMemo(() =>
-    materials.map((m) => ({
-      name: m,
-      volume: aggMaterials[m]?.peso ?? 0,
-    }))
-  , [aggMaterials]);
-
-  const revenueByMonth = useMemo(() => {
-    const map: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      const date = new Date(row.Data);
-      if (isNaN(date.getTime())) return;
-      const month = date.toISOString().slice(0, 7);
-      map[month] = (map[month] || 0) + row.Valor;
+  const fluxoData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      grouped[d.etapa] = (grouped[d.etapa] || 0) + 1;
     });
-    return Object.entries(map)
-      .map(([month, valor]) => ({ month, valor: Number(valor) }))
-      .sort((a, b) => a.month.localeCompare(b.month));
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
   }, [filteredData]);
 
-  const fluxoByEtapa = useMemo(() => {
-    const map: Record<string, number> = {};
-    filteredData.forEach((row) => {
-      map[row.Etapa] = (map[row.Etapa] || 0) + row.Valor;
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value: Number(value) }));
-  }, [filteredData]);
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#FF6384', '#9966FF'];
 
-  const uniqueProdutos = useMemo(() => Array.from(new Set(data.map((r) => r.Produto))).sort(), [data]);
-  const uniqueRegioes = useMemo(() => Array.from(new Set(data.map((r) => r.Regiao))).sort(), [data]);
-  const uniqueEtapas = useMemo(() => Array.from(new Set(data.map((r) => r.Etapa))).sort(), [data]);
+  const lastUpdateStr = lastUpdate
+    ? new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(lastUpdate)
+    : 'Nenhuma atualização ainda';
 
-  const headers = data.length ? Object.keys(data[0]) : [];
+  const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const bstr = ev.target?.result as string;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const json = XLSX.utils.sheet_to_json<any>(ws);
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      const parsed: SalesData[] = json.map((row: any) => ({
+        data: row.data || '',
+        material: row.material || '',
+        volume: Number(row.volume) || 0,
+        faturamento: Number(row.faturamento) || 0,
+        etapa: row.etapa || '',
+      })).filter((d) => d.material && d.volume > 0);
+      setData(parsed);
+      setLastUpdate(new Date());
+      setFilters({ material: '', dateFrom: '', dateTo: '' });
+      // Reset file input
+      e.target.value = '';
+    };
+    reader.readAsBinaryString(file);
+  }, []);
 
-  if (!data.length) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/50 to-blue-900/50 flex items-center justify-center p-8">
-        <div className={`${glassStyle} bg-gradient-to-r from-blue-500/20 to-purple-500/20 max-w-2xl mx-auto text-center`}>
-          <h2 className="text-3xl font-bold text-white mb-6">Dashboard Metalfama</h2>
-          <p className="text-xl text-gray-300 mb-8">Importe o arquivo Excel para visualizar os dados.</p>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileUpload}
-            className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 file:backdrop-blur-sm w-full max-w-md mx-auto block px-6 py-3 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-      </div>
-    );
-  }
+  const handleClear = () => {
+    if (confirm('Tem certeza que deseja limpar todos os dados?')) {
+      setData([]);
+      setLastUpdate(null);
+      setFilters({ material: '', dateFrom: '', dateTo: '' });
+      setShowFilters(false);
+    }
+  };
+
+  const updateFilter = (newFilters: Partial<Filters>) => {
+    setFilters((prev) => ({ ...prev, ...newFilters }));
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/50 to-blue-900/50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-5xl font-black bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-12 text-center">
-          Dashboard Metalfama
-        </h1>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-          <div className={`${glassStyle} bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-center`}>
-            <h3 className="text-2xl font-bold text-white mb-4">Peso Total</h3>
-            <p className="text-5xl font-black text-blue-400 mb-2">{totalPeso.toLocaleString()}</p>
-            <p className="text-xl text-gray-300">kg</p>
-          </div>
-          <div className={`${glassStyle} bg-gradient-to-r from-green-500/20 to-green-600/20 text-center`}>
-            <h3 className="text-2xl font-bold text-white mb-4">Valor Total</h3>
-            <p className="text-5xl font-black text-green-400 mb-2">{totalValor.toLocaleString()}</p>
-            <p className="text-xl text-gray-300">R$</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
-          {materials.map((material, index) => {
-            const peso = aggMaterials[material]?.peso ?? 0;
-            const valor = aggMaterials[material]?.valor ?? 0;
-            const colorIndex = index % COLORS.length;
-            return (
-              <div
-                key={material}
-                className={`${glassStyle} bg-gradient-to-br from-[${COLORS[colorIndex]}]/20 to-[${COLORS[colorIndex]}]50`}
-              >
-                <h4 className="text-xl font-bold text-white mb-3 capitalize">{material}</h4>
-                <p className="text-3xl font-black text-blue-400 mb-2">{peso.toLocaleString()} kg</p>
-                <p className="text-xl font-semibold text-green-400">R$ {valor.toLocaleString()}</p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-8 md:p-12 font-sans">
+      <div className="max-w-7xl mx-auto space-y-12">
+        {/* Header */}
+        <div className={glassClass}>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-6">
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent mb-2">
+                Dashboard de Vendas
+              </h1>
+              <p className="text-xl text-white/80">Gerencie seus dados de materiais e faturamento 📊</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="text-lg md:text-xl font-semibold text-white/90">
+                Última atualização: <span className="font-bold text-blue-300">{lastUpdateStr}</span>
               </div>
-            );
-          })}
-        </div>
-
-        <div className={`${glassStyle} mb-12`}>
-          <button
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            className="flex w-full items-center justify-between text-2xl font-bold text-white p-6 hover:scale-105 transition-transform"
-          >
-            Filtros {filtersOpen ? '▲' : '▼'}
-          </button>
-          {filtersOpen && (
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-white/5 rounded-2xl">
-              <div>
-                <label className="block text-white font-semibold mb-2">Produto</label>
-                <select
-                  value={filters.produto}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, produto: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Todos</option>
-                  {uniqueProdutos.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-white font-semibold mb-2">Região</label>
-                <select
-                  value={filters.regiao}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, regiao: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Todas</option>
-                  {uniqueRegioes.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-white font-semibold mb-2">Etapa</label>
-                <select
-                  value={filters.etapa}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, etapa: e.target.value }))}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Todas</option>
-                  {uniqueEtapas.map((e) => (
-                    <option key={e} value={e}>
-                      {e}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                onClick={() => setFilters({ produto: '', regiao: '', etapa: '' })}
-                className="md:col-span-3 bg-gradient-to-r from-red-500/80 to-red-600/80 hover:from-red-600/90 hover:to-red-700/90 text-white font-bold py-3 px-8 rounded-2xl transition-all duration-300 col-span-1 md:col-span-1"
-              >
-                Limpar Filtros
+              <label className={btnClass}>
+                Importar Excel
+                <input
+                  type="file"
+                  hidden
+                  accept=".xlsx,.xls"
+                  onChange={handleFile}
+                />
+              </label>
+              <button className={`${btnClass} bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600`} onClick={handleClear}>
+                Limpar Dados
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Filtros */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">🔍</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Filtros</h2>
+          </div>
+          <button
+            className={btnClass}
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            {showFilters ? 'Fechar Filtros' : 'Abrir Filtros'} {showFilters ? '✕' : '▶️'}
+          </button>
+          {showFilters && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+              <div>
+                <label className="block text-white/90 mb-2 font-semibold">Material</label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome do material..."
+                  value={filters.material}
+                  onChange={(e) => updateFilter({ material: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="block text-white/90 mb-2 font-semibold">Data Inicial (DD/MM/YYYY)</label>
+                <input
+                  type="text"
+                  placeholder="01/01/2024"
+                  value={filters.dateFrom}
+                  onChange={(e) => updateFilter({ dateFrom: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className="block text-white/90 mb-2 font-semibold">Data Final (DD/MM/YYYY)</label>
+                <input
+                  type="text"
+                  placeholder="31/12/2024"
+                  value={filters.dateTo}
+                  onChange={(e) => updateFilter({ dateTo: e.target.value })}
+                  className={inputClass}
+                />
+              </div>
             </div>
           )}
         </div>
 
-        <div className="space-y-12 mb-12">
-          <div className={`${glassStyle} h-[450px]`}>
-            <h3 className="text-3xl font-bold text-white mb-8 text-center">Volume por Material</h3>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
-                <XAxis dataKey="name" stroke="white" />
-                <YAxis stroke="white" />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="volume" fill="#60a5fa" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {/* KPIs */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">📊</span>
+            <h2 className="text-3xl md:text-4xl font-bold">KPIs Principais</h2>
           </div>
-
-          <div className={`${glassStyle} h-[450px]`}>
-            <h3 className="text-3xl font-bold text-white mb-8 text-center">Evolução de Faturamento</h3>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={revenueByMonth}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
-                <XAxis dataKey="month" stroke="white" />
-                <YAxis stroke="white" />
-                <Tooltip />
-                <Line type="monotone" dataKey="valor" stroke="#10b981" strokeWidth={4} dot={{ fill: '#10b981', strokeWidth: 2 }} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className={glassMiniClass}>
+              <div className="text-3xl md:text-4xl font-bold text-blue-400 mb-2">{kpis.totalVolume.toLocaleString()}</div>
+              <div className="text-white/90 text-lg">Volume Total</div>
+            </div>
+            <div className={glassMiniClass}>
+              <div className="text-3xl md:text-4xl font-bold text-green-400 mb-2">
+                R$ {kpis.totalFaturamento.toLocaleString()}
+              </div>
+              <div className="text-white/90 text-lg">Faturamento Total</div>
+            </div>
+            <div className={glassMiniClass}>
+              <div className="text-3xl md:text-4xl font-bold text-purple-400 mb-2">{kpis.uniqueMaterials}</div>
+              <div className="text-white/90 text-lg">Materiais Únicos</div>
+            </div>
+            <div className={glassMiniClass}>
+              <div className="text-3xl md:text-4xl font-bold text-orange-400 mb-2">{kpis.totalRecords}</div>
+              <div className="text-white/90 text-lg">Registros</div>
+            </div>
           </div>
+        </div>
 
-          <div className={`${glassStyle} h-[450px]`}>
-            <h3 className="text-3xl font-bold text-white mb-8 text-center">Fluxo Comercial</h3>
-            <ResponsiveContainer width="100%" height="100%">
+        {/* Cards de Materiais */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">🏭</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Cards de Materiais (Top 5)</h2>
+          </div>
+          {materialCards.length ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {materialCards.map((m, i) => (
+                <div key={i} className={glassMiniClass}>
+                  <h3 className="font-bold text-xl text-white mb-2 truncate">{m.name}</h3>
+                  <div className="text-3xl font-bold text-blue-400">{m.volume.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 opacity-50">
+              <p className="text-2xl">Sem materiais para exibir</p>
+            </div>
+          )}
+        </div>
+
+        {/* Volume por Material */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">📈</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Volume por Material (Top 10)</h2>
+          </div>
+          <ResponsiveContainer width="100%" height={400}>
+            <BarChart data={volumeData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
+              <XAxis dataKey="name" angle={-45} height={80} tick={{ fill: 'white' }} />
+              <YAxis tick={{ fill: 'white' }} />
+              <Tooltip />
+              <Bar dataKey="volume" fill="#8884d8" name="Volume" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Evolução de Faturamento */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">💹</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Evolução de Faturamento</h2>
+          </div>
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart data={evolucaoData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="white/10" />
+              <XAxis dataKey="name" tick={{ fill: 'white' }} />
+              <YAxis tick={{ fill: 'white' }} />
+              <Tooltip />
+              <Line type="monotone" dataKey="value" stroke="#8884d8" strokeWidth={3} dot={{ fill: '#8884d8', strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Fluxo Comercial */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">🎯</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Fluxo Comercial</h2>
+          </div>
+          {fluxoData.length ? (
+            <ResponsiveContainer width="100%" height={400}>
               <PieChart>
                 <Pie
-                  data={fluxoByEtapa}
+                  data={fluxoData}
+                  dataKey="value"
+                  nameKey="name"
                   cx="50%"
                   cy="50%"
                   outerRadius={120}
-                  dataKey="value"
-                  nameKey="name"
                   label
                 >
-                  {fluxoByEtapa.map((entry, index) => (
+                  {fluxoData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-96 opacity-50">
+              <p className="text-2xl">Sem dados de fluxo</p>
+            </div>
+          )}
         </div>
 
-        <div className={`${glassStyle} overflow-x-auto max-h-[500px] overflow-y-auto`}>
-          <table className="w-full min-w-[800px] text-sm">
-            <thead>
-              <tr className="border-b border-white/20 uppercase tracking-wider">
-                {headers.map((header) => (
-                  <th key={header} className="p-6 text-left text-white font-bold bg-white/5 sticky top-0">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.map((row, index) => (
-                <tr key={index} className="border-b border-white/10 hover:bg-white/10 transition-colors">
-                  {headers.map((header) => {
-                    const value = row[header as keyof Row];
-                    const displayValue =
-                      typeof value === 'number' ? value.toLocaleString('pt-BR') : String(value);
-                    return (
-                      <td key={header} className="p-6 align-top">
-                        {displayValue}
-                      </td>
-                    );
-                  })}
+        {/* Tabela de Dados */}
+        <div className={glassClass}>
+          <div className="flex items-center mb-8">
+            <span className="text-5xl mr-6 hover:scale-110 transition-transform duration-300">📋</span>
+            <h2 className="text-3xl md:text-4xl font-bold">Tabela de Dados (Top 50)</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-white/20 rounded-2xl overflow-hidden">
+              <thead>
+                <tr className="bg-white/10">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Data</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Material</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Volume</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Faturamento</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">Etapa</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {filteredData.length === 0 && (
-            <div className="text-center py-12 text-gray-400 text-xl">Nenhum dado encontrado com os filtros aplicados.</div>
-          )}
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {filteredData.length > 0 ? (
+                  filteredData.slice(0, 50).map((d, i) => (
+                    <tr key={i} className="hover:bg-white/10 transition-colors duration-200">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{d.data}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-white/90 max-w-xs truncate">{d.material}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-300 font-semibold">{d.volume.toLocaleString()}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-400 font-semibold">R$ {d.faturamento.toLocaleString()}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-300">{d.etapa}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-16 text-center text-xl font-semibold text-white/50">
+                      📋 Sem dados para exibir. Importe um Excel!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default Page;
+}
