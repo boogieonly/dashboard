@@ -1,389 +1,497 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+} from 'recharts';
+import { Upload, Filter, Download, Package, DollarSign, Target, Users, TrendingUp, Activity } from 'lucide-react';
 
-type Etapa = 'leads' | 'propostas' | 'contratos' | 'faturado';
+type SalesData = {
+  Data: string;
+  Regiao: string;
+  Produto: string;
+  Vendedor: string;
+  Cliente: string;
+  Valor: number;
+  Meta: number;
+  Etapa: string;
+  Material: string;
+  Peso: number;
+};
 
-interface Venda {
-  id: number;
-  data: string;
-  periodo: string;
+type Filters = {
+  inicio: string;
+  fim: string;
   regiao: string;
   produto: string;
   vendedor: string;
-  cliente: string;
-  valor: number;
-  meta: number;
-  etapa: Etapa;
-}
+  material: string;
+};
 
-interface Filters {
-  periodo: string;
-  regiao: string;
-  produto: string;
-  vendedor: string;
-}
+type KPIs = {
+  volumeTotal: number;
+  valorTotal: number;
+  atingimento: number;
+  oportunidades: number;
+};
 
-interface TopVendedor {
-  vendedor: string;
-  valor: number;
-  meta: number;
-  progresso: number;
-}
-
-interface TopCliente {
-  cliente: string;
-  valor: number;
-  count: number;
-}
-
-interface FunnelItem {
-  name: string;
-  value: number;
-  color: string;
-}
-
-export default function Home() {
-  const vendas: Venda[] = [
-    {id:1, data:'2024-01-05', periodo:'2024-01', regiao:'Sudeste', produto:'Estruturas Metálicas', vendedor:'João Silva', cliente:'Construtora ABC', valor:30000, meta:25000, etapa:'faturado'},
-    {id:2, data:'2024-01-12', periodo:'2024-01', regiao:'Sul', produto:'Portões Automáticos', vendedor:'Ana Costa', cliente:'Fazenda XYZ', valor:18000, meta:20000, etapa:'contratos'},
-    {id:3, data:'2024-01-20', periodo:'2024-01', regiao:'Nordeste', produto:'Escadas', vendedor:'Pedro Santos', cliente:'Indústria DEF', valor:12000, meta:15000, etapa:'propostas'},
-    {id:4, data:'2024-01-28', periodo:'2024-01', regiao:'Centro-Oeste', produto:'estagio', vendedor:'Lucas Mendes', cliente:'Comercial GHI', valor:0, meta:10000, etapa:'leads'},
-    {id:5, data:'2024-02-03', periodo:'2024-02', regiao:'Sudeste', produto:'Grades de Proteção', vendedor:'Fernanda Lima', cliente:'Residencial JKL', valor:22000, meta:18000, etapa:'faturado'},
-    {id:6, data:'2024-02-10', periodo:'2024-02', regiao:'Sul', produto:'Portas', vendedor:'Carlos Souza', cliente:'Empresa MNO', valor:15000, meta:16000, etapa:'contratos'},
-    {id:7, data:'2024-02-18', periodo:'2024-02', regiao:'Nordeste', produto:'Estruturas Metálicas', vendedor:'João Silva', cliente:'Cliente PQR', valor:25000, meta:22000, etapa:'propostas'},
-    {id:8, data:'2024-02-25', periodo:'2024-02', regiao:'Centro-Oeste', produto:'Escadas', vendedor:'Ana Costa', cliente:'Business STU', valor:0, meta:12000, etapa:'leads'},
-    {id:9, data:'2024-03-02', periodo:'2024-03', regiao:'Sudeste', produto:'estagio', vendedor:'Pedro Santos', cliente:'Corporação VWX', valor:35000, meta:28000, etapa:'faturado'},
-    {id:10, data:'2024-03-09', periodo:'2024-03', regiao:'Sul', produto:'Portões Automáticos', vendedor:'Lucas Mendes', cliente:'Ltda YZ0', valor:19000, meta:21000, etapa:'contratos'},
-    {id:11, data:'2024-03-16', periodo:'2024-03', regiao:'Nordeste', produto:'Grades de Proteção', vendedor:'Fernanda Lima', cliente:'Construtora 123', valor:14000, meta:17000, etapa:'propostas'},
-    {id:12, data:'2024-03-23', periodo:'2024-03', regiao:'Centro-Oeste', produto:'Portas', vendedor:'Carlos Souza', cliente:'Fábrica 456', valor:0, meta:11000, etapa:'leads'},
-    {id:13, data:'2024-04-01', periodo:'2024-04', regiao:'Sudeste', produto:'Estruturas Metálicas', vendedor:'João Silva', cliente:'Loja 789', valor:28000, meta:24000, etapa:'faturado'},
-    {id:14, data:'2024-04-08', periodo:'2024-04', regiao:'Sul', produto:'Escadas', vendedor:'Ana Costa', cliente:'Projeto ABC1', valor:20000, meta:19000, etapa:'contratos'},
-    {id:15, data:'2024-04-15', periodo:'2024-04', regiao:'Nordeste', produto:'estagio', vendedor:'Pedro Santos', cliente:'Obra DEF2', valor:16000, meta:14000, etapa:'propostas'},
-    {id:16, data:'2024-04-22', periodo:'2024-04', regiao:'Centro-Oeste', produto:'Portões Automáticos', vendedor:'Lucas Mendes', cliente:'Construtora ABC', valor:0, meta:13000, etapa:'leads'},
-    {id:17, data:'2024-05-05', periodo:'2024-05', regiao:'Sudeste', produto:'Grades de Proteção', vendedor:'Fernanda Lima', cliente:'Fazenda XYZ', valor:26000, meta:23000, etapa:'faturado'},
-    {id:18, data:'2024-05-12', periodo:'2024-05', regiao:'Sul', produto:'Portas', vendedor:'Carlos Souza', cliente:'Indústria DEF', valor:17000, meta:20000, etapa:'contratos'},
-    {id:19, data:'2024-05-20', periodo:'2024-05', regiao:'Nordeste', produto:'Estruturas Metálicas', vendedor:'João Silva', cliente:'Comercial GHI', valor:0, meta:16000, etapa:'leads'},
-    {id:20, data:'2024-05-27', periodo:'2024-05', regiao:'Centro-Oeste', produto:'Escadas', vendedor:'Ana Costa', cliente:'Residencial JKL', valor:21000, meta:18000, etapa:'propostas'},
-    {id:21, data:'2024-06-03', periodo:'2024-06', regiao:'Sudeste', produto:'estagio', vendedor:'Pedro Santos', cliente:'Empresa MNO', valor:32000, meta:27000, etapa:'faturado'},
-    {id:22, data:'2024-06-10', periodo:'2024-06', regiao:'Sul', produto:'Portões Automáticos', vendedor:'Lucas Mendes', cliente:'Cliente PQR', valor:23000, meta:22000, etapa:'contratos'},
-    {id:23, data:'2024-06-17', periodo:'2024-06', regiao:'Nordeste', produto:'Grades de Proteção', vendedor:'Fernanda Lima', cliente:'Business STU', valor:0, meta:15000, etapa:'leads'},
-    {id:24, data:'2024-06-24', periodo:'2024-06', regiao:'Centro-Oeste', produto:'Portas', vendedor:'Carlos Souza', cliente:'Corporação VWX', valor:18000, meta:17000, etapa:'propostas'},
-    {id:25, data:'2024-01-08', periodo:'2024-01', regiao:'Sudeste', produto:'Escadas', vendedor:'Fernanda Lima', cliente:'Ltda YZ0', valor:24000, meta:21000, etapa:'faturado'},
-    {id:26, data:'2024-02-14', periodo:'2024-02', regiao:'Nordeste', produto:'estagio', vendedor:'Lucas Mendes', cliente:'Construtora 123', valor:0, meta:12000, etapa:'leads'},
-    {id:27, data:'2024-03-11', periodo:'2024-03', regiao:'Sul', produto:'Estruturas Metálicas', vendedor:'Carlos Souza', cliente:'Fábrica 456', valor:29000, meta:25000, etapa:'faturado'},
-    {id:28, data:'2024-04-19', periodo:'2024-04', regiao:'Centro-Oeste', produto:'Portões Automáticos', vendedor:'João Silva', cliente:'Loja 789', valor:15500, meta:19000, etapa:'contratos'},
-    {id:29, data:'2024-05-14', periodo:'2024-05', regiao:'Sudeste', produto:'Grades de Proteção', vendedor:'Ana Costa', cliente:'Projeto ABC1', valor:0, meta:14000, etapa:'leads'},
-    {id:30, data:'2024-06-21', periodo:'2024-06', regiao:'Nordeste', produto:'Escadas', vendedor:'Pedro Santos', cliente:'Obra DEF2', valor:27000, meta:24000, etapa:'faturado'}
-  ];
-
+export default function DashboardPage() {
+  const [data, setData] = useState<SalesData[]>([]);
   const [filters, setFilters] = useState<Filters>({
-    periodo: '',
+    inicio: '',
+    fim: '',
     regiao: '',
     produto: '',
     vendedor: '',
+    material: '',
   });
 
-  const optionsPeriodos = useMemo(
-    () => Array.from(new Set(vendas.map((v) => v.periodo))).sort(),
-    []
-  );
+  const parseDate = useCallback((dateStr: string): Date | null => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) return date;
+    const parts = dateStr.split(/[\-\/\.]/);
+    if (parts.length === 3) {
+      return new Date(
+        parseInt(parts[2]),
+        parseInt(parts[1]) - 1,
+        parseInt(parts[0])
+      );
+    }
+    return null;
+  }, []);
 
-  const optionsRegioes = useMemo(
-    () => Array.from(new Set(vendas.map((v) => v.regiao))).sort(),
-    []
-  );
-
-  const optionsProdutos = useMemo(
-    () => Array.from(new Set(vendas.map((v) => v.produto))).sort(),
-    []
-  );
-
-  const optionsVendedores = useMemo(
-    () => Array.from(new Set(vendas.map((v) => v.vendedor))).sort(),
-    []
-  );
-
-  const filteredVendas = useMemo(() =>
-    vendas.filter(
-      (v) =>
-        (filters.periodo === '' || v.periodo === filters.periodo) &&
-        (filters.regiao === '' || v.regiao === filters.regiao) &&
-        (filters.produto === '' || v.produto === filters.produto) &&
-        (filters.vendedor === '' || v.vendedor === filters.vendedor)
-    ),
-    [vendas, filters]
-  );
-
-  const topVendedores = useMemo((): TopVendedor[] => {
-    const faturados = filteredVendas.filter((v) => v.etapa === 'faturado');
-    const sums: Record<string, { valor: number; meta: number }> = {};
-    faturados.forEach((v) => {
-      if (!sums[v.vendedor]) {
-        sums[v.vendedor] = { valor: 0, meta: 0 };
+  const filteredData = useMemo(() => {
+    return data.filter((d) => {
+      // Date filter
+      const rowDate = parseDate(d.Data);
+      const inicioDate = filters.inicio ? new Date(filters.inicio) : null;
+      const fimDate = filters.fim ? new Date(filters.fim) : null;
+      if (rowDate) {
+        if (inicioDate && rowDate < inicioDate) return false;
+        if (fimDate && rowDate > fimDate) return false;
       }
-      sums[v.vendedor].valor += v.valor;
-      sums[v.vendedor].meta += v.meta;
+
+      // Other filters
+      if (filters.regiao && d.Regiao !== filters.regiao) return false;
+      if (filters.produto && d.Produto !== filters.produto) return false;
+      if (filters.vendedor && d.Vendedor !== filters.vendedor) return false;
+      if (filters.material && d.Material !== filters.material) return false;
+
+      return true;
     });
-    return Object.entries(sums)
-      .map(([vendedor, data]) => ({
-        vendedor,
-        ...data,
-        progresso: data.meta > 0 ? (data.valor / data.meta) * 100 : 0,
-      }))
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 3);
-  }, [filteredVendas]);
+  }, [data, filters, parseDate]);
 
-  const funnelData = useMemo<FunnelItem[]>(() => [
-    {
-      name: 'Leads',
-      value: filteredVendas.filter((v) => v.etapa === 'leads').length,
-      color: 'bg-blue-500',
-    },
-    {
-      name: 'Propostas',
-      value: filteredVendas.filter((v) => v.etapa === 'propostas').length,
-      color: 'bg-emerald-500',
-    },
-    {
-      name: 'Contratos',
-      value: filteredVendas.filter((v) => v.etapa === 'contratos').length,
-      color: 'bg-amber-500',
-    },
-    {
-      name: 'Faturado',
-      value: filteredVendas.filter((v) => v.etapa === 'faturado').length,
-      color: 'bg-green-500',
-    },
-  ], [filteredVendas]);
+  const kpis: KPIs = useMemo(() => {
+    const volumeTotal = filteredData.reduce((sum, d) => sum + (d.Peso || 0), 0);
+    const valorTotal = filteredData.reduce((sum, d) => sum + (d.Valor || 0), 0);
+    const metaTotal = filteredData.reduce((sum, d) => sum + (d.Meta || 0), 0);
+    const oportunidades = filteredData.length;
+    const atingimento = metaTotal > 0 ? Math.min((valorTotal / metaTotal) * 100, 100) : 0;
+    return { volumeTotal, valorTotal, atingimento, oportunidades };
+  }, [filteredData]);
 
-  const topClientes = useMemo((): TopCliente[] => {
-    const faturados = filteredVendas.filter((v) => v.etapa === 'faturado');
-    const sums: Record<string, { valor: number; count: number }> = {};
-    faturados.forEach((v) => {
-      if (!sums[v.cliente]) {
-        sums[v.cliente] = { valor: 0, count: 0 };
+  const materialStats = useMemo(() => {
+    const stats: Record<string, { volume: number; valor: number }> = {
+      Cobre: { volume: 0, valor: 0 },
+      Latão: { volume: 0, valor: 0 },
+      Alumínio: { volume: 0, valor: 0 },
+      Inox: { volume: 0, valor: 0 },
+      Outros: { volume: 0, valor: 0 },
+    };
+    filteredData.forEach((d) => {
+      let cat = d.Material;
+      if (!['Cobre', 'Latão', 'Alumínio', 'Inox'].includes(cat)) {
+        cat = 'Outros';
       }
-      sums[v.cliente].valor += v.valor;
-      sums[v.cliente].count += 1;
+      stats[cat].volume += d.Peso || 0;
+      stats[cat].valor += d.Valor || 0;
     });
-    return Object.entries(sums)
-      .map(([cliente, data]) => ({ cliente, ...data }))
+    return stats;
+  }, [filteredData]);
+
+  const faturamentoPorData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      const dateKey = parseDate(d.Data)?.toISOString().split('T')[0] || '';
+      if (dateKey) {
+        grouped[dateKey] = (grouped[dateKey] || 0) + (d.Valor || 0);
+      }
+    });
+    return Object.entries(grouped)
+      .map(([date, valor]) => ({ date, valor: Number(valor.toFixed(2)) }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [filteredData, parseDate]);
+
+  const etapasData = useMemo(() => {
+    const grouped: Record<string, number> = {};
+    filteredData.forEach((d) => {
+      const etapa = d.Etapa || 'Sem Etapa';
+      grouped[etapa] = (grouped[etapa] || 0) + 1;
+    });
+    return Object.entries(grouped).map(([etapa, count]) => ({ etapa, count }));
+  }, [filteredData]);
+
+  const topClientes = useMemo(() => {
+    const grouped: Record<string, { volume: number; valor: number }> = {};
+    filteredData.forEach((d) => {
+      const cliente = d.Cliente || 'Desconhecido';
+      if (!grouped[cliente]) {
+        grouped[cliente] = { volume: 0, valor: 0 };
+      }
+      grouped[cliente].volume += d.Peso || 0;
+      grouped[cliente].valor += d.Valor || 0;
+    });
+    return Object.entries(grouped)
+      .map(([cliente, stats]) => ({ cliente, ...stats }))
       .sort((a, b) => b.valor - a.valor)
       .slice(0, 10);
-  }, [filteredVendas]);
+  }, [filteredData]);
 
-  const formatCurrency = (value: number): string =>
-    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const uniqueOptions = useMemo(() => ({
+    regioes: Array.from(new Set(data.map((d) => d.Regiao).filter(Boolean))),
+    produtos: Array.from(new Set(data.map((d) => d.Produto).filter(Boolean))),
+    vendedores: Array.from(new Set(data.map((d) => d.Vendedor).filter(Boolean))),
+    materiais: Array.from(new Set(data.map((d) => d.Material).filter(Boolean))),
+  }), [data]);
 
-  const getMetaColor = (progress: number): string => {
-    if (progress >= 100) return 'bg-green-400 text-green-900 px-3 py-1 rounded-full text-sm font-bold shadow-lg';
-    if (progress >= 80) return 'bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full text-sm font-bold shadow-lg';
-    return 'bg-red-400 text-red-900 px-3 py-1 rounded-full text-sm font-bold shadow-lg';
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const arrayBuffer = evt.target?.result as ArrayBuffer;
+      if (arrayBuffer) {
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(sheet) || [];
+
+        const parsedData: SalesData[] = jsonData.map((row) => ({
+          Data: row.Data?.toString() || '',
+          Regiao: row.Regiao?.toString() || '',
+          Produto: row.Produto?.toString() || '',
+          Vendedor: row.Vendedor?.toString() || '',
+          Cliente: row.Cliente?.toString() || '',
+          Valor: parseFloat(row.Valor?.toString() || '0'),
+          Meta: parseFloat(row.Meta?.toString() || '0'),
+          Etapa: row.Etapa?.toString() || '',
+          Material: row.Material?.toString() || '',
+          Peso: parseFloat(row.Peso?.toString() || '0'),
+        }));
+        setData(parsedData);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
+  const updateFilter = useCallback((key: keyof Filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const exportToCSV = useCallback(() => {
+    const headers = ['Data', 'Regiao', 'Produto', 'Vendedor', 'Cliente', 'Valor', 'Meta', 'Etapa', 'Material', 'Peso'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredData.map((row) =>
+        headers.map((header) => `"${String((row as any)[header] || '')}"`).join(',')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `dashboard_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [filteredData]);
+
+  const formatCurrency = (value: number) => {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  const medals = ['🥇', '🥈', '🥉'];
-
-  const exportToExcel = () => {
-    const dataExport = filteredVendas.map((v) => ({
-      ID: v.id,
-      Data: v.data,
-      Periodo: v.periodo,
-      Regiao: v.regiao,
-      Produto: v.produto,
-      Vendedor: v.vendedor,
-      Cliente: v.cliente,
-      Valor: v.valor,
-      Meta: v.meta,
-      Etapa: v.etapa,
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vendas');
-    XLSX.writeFile(wb, `vendas-metalfama-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const formatNumber = (value: number) => {
+    return value.toLocaleString('pt-BR');
   };
-
-  const maxFunnelValue = Math.max(...funnelData.map((d) => d.value), 1);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 p-8 font-sans">
+    <main className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black p-8 font-sans">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-white via-blue-300/90 to-purple-400 bg-clip-text text-transparent mb-6 drop-shadow-2xl">
-            Dashboard Vendas
-          </h1>
-          <h2 className="text-2xl md:text-3xl text-white/80 font-light tracking-wide">
-            Metalfama - Performance em Tempo Real
-          </h2>
+        {/* Header */}
+        <header className="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-500 text-white p-8 rounded-3xl mb-12 text-center shadow-2xl backdrop-blur-xl border border-white/20">
+          <h1 className="text-5xl md:text-6xl font-bold mb-4 drop-shadow-lg">Dashboard Comercial</h1>
+          <p className="text-xl opacity-90">Métricas de Volume, Valor e Performance</p>
+        </header>
+
+        {/* Upload Section */}
+        <div className="mb-12 p-12 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl text-center transition-all hover:shadow-3xl">
+          <Upload className="w-16 h-16 mx-auto mb-6 text-blue-400" />
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileUpload}
+            className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600 mx-auto block"
+          />
+          {data.length === 0 ? (
+            <p className="text-gray-400 mt-4">Carregue um arquivo Excel para visualizar as métricas</p>
+          ) : (
+            <p className="text-green-400 mt-4">{data.length} registros carregados</p>
+          )}
         </div>
 
         {/* Filters */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-8 mb-12 hover:shadow-3xl transition-all">
-          <h2 className="text-3xl font-bold text-white mb-8">🔍 Filtros Dinâmicos</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-3">Período</label>
-              <select
-                value={filters.periodo}
-                onChange={(e) => setFilters({ ...filters, periodo: e.target.value })}
-                className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white font-medium backdrop-blur-sm focus:outline-none focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all shadow-lg hover:shadow-xl"
-              >
-                <option value="">Todos os Períodos</option>
-                {optionsPeriodos.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+        <div className="mb-12">
+          <div className="flex items-center mb-6">
+            <Filter className="w-6 h-6 mr-3 text-blue-400" />
+            <h2 className="text-2xl font-bold text-white">Filtros</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Período Início</label>
+              <input
+                type="date"
+                value={filters.inicio}
+                onChange={(e) => updateFilter('inicio', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-3">Região</label>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Período Fim</label>
+              <input
+                type="date"
+                value={filters.fim}
+                onChange={(e) => updateFilter('fim', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+            </div>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Região</label>
               <select
                 value={filters.regiao}
-                onChange={(e) => setFilters({ ...filters, regiao: e.target.value })}
-                className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white font-medium backdrop-blur-sm focus:outline-none focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all shadow-lg hover:shadow-xl"
+                onChange={(e) => updateFilter('regiao', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Todas Regiões</option>
-                {optionsRegioes.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
+                <option value="">Todas</option>
+                {uniqueOptions.regioes.map((regiao) => (
+                  <option key={regiao} value={regiao}>
+                    {regiao}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-3">Produto</label>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Produto</label>
               <select
                 value={filters.produto}
-                onChange={(e) => setFilters({ ...filters, produto: e.target.value })}
-                className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white font-medium backdrop-blur-sm focus:outline-none focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all shadow-lg hover:shadow-xl"
+                onChange={(e) => updateFilter('produto', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Todos Produtos</option>
-                {optionsProdutos.map((prod) => (
-                  <option key={prod} value={prod}>
-                    {prod}
+                <option value="">Todos</option>
+                {uniqueOptions.produtos.map((produto) => (
+                  <option key={produto} value={produto}>
+                    {produto}
                   </option>
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-3">Vendedor</label>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Vendedor</label>
               <select
                 value={filters.vendedor}
-                onChange={(e) => setFilters({ ...filters, vendedor: e.target.value })}
-                className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white font-medium backdrop-blur-sm focus:outline-none focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all shadow-lg hover:shadow-xl"
+                onChange={(e) => updateFilter('vendedor', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Todos Vendedores</option>
-                {optionsVendedores.map((ven) => (
-                  <option key={ven} value={ven}>
-                    {ven}
+                <option value="">Todos</option>
+                {uniqueOptions.vendedores.map((vendedor) => (
+                  <option key={vendedor} value={vendedor}>
+                    {vendedor}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-2xl border border-white/20">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Material</label>
+              <select
+                value={filters.material}
+                onChange={(e) => updateFilter('material', e.target.value)}
+                className="w-full p-3 bg-white/20 border border-white/30 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos</option>
+                {uniqueOptions.materiais.map((material) => (
+                  <option key={material} value={material}>
+                    {material}
                   </option>
                 ))}
               </select>
             </div>
           </div>
-        </div>
-
-        {/* Performance Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-          {topVendedores.map((vendedor, index) => (
-            <div
-              key={vendedor.vendedor}
-              className="group bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-8 hover:shadow-4xl hover:-translate-y-2 transition-all duration-300 cursor-pointer relative overflow-hidden"
+          <div className="mt-6">
+            <button
+              onClick={exportToCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-2xl hover:from-green-600 hover:to-emerald-700 shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <div className="absolute top-4 right-4 text-2xl opacity-20 group-hover:opacity-40 transition-opacity">
-                ⭐
-              </div>
-              <div className="flex items-start gap-6 mb-6">
-                <div className="text-5xl flex-shrink-0 mt-2">{medals[index] || '🏅'}</div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-2xl lg:text-3xl font-black text-white truncate mb-2">
-                    {vendedor.vendedor}
-                  </h3>
-                  <p className="text-2xl text-green-400 font-bold mb-1">
-                    {formatCurrency(vendedor.valor)}
-                  </p>
-                  <p className="text-sm text-gray-400">Meta: {formatCurrency(vendedor.meta)}</p>
-                </div>
-              </div>
-              <div className={getMetaColor(vendedor.progresso)}>
-                {Math.round(vendedor.progresso)}% da Meta
-              </div>
-            </div>
-          ))}
+              <Download className="w-5 h-5 mr-2" />
+              Exportar Dados Filtrados ({filteredData.length})
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 mb-16">
-          {/* Funil */}
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-10 hover:shadow-3xl transition-all">
-            <h2 className="text-3xl font-bold text-white mb-10 text-center">📈 Funil de Vendas</h2>
-            <div className="space-y-8">
-              {funnelData.map((item, index) => (
-                <div key={item.name} className="flex items-center gap-8 px-6 py-4 bg-white/5 rounded-2xl backdrop-blur-sm border border-white/5 hover:bg-white/10 transition-all">
-                  <div className="w-28 text-right text-lg font-bold text-gray-200">
-                    {item.name}
-                  </div>
-                  <div className="flex-1 h-8 bg-white/10 rounded-2xl overflow-hidden shadow-inner">
+        {/* KPIs */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all text-center">
+            <Package className="w-12 h-12 text-blue-400 mx-auto mb-4" />
+            <div className="text-3xl font-bold text-white mb-1">{formatNumber(kpis.volumeTotal)}</div>
+            <div className="text-gray-300">Volume Total (kg)</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all text-center">
+            <DollarSign className="w-12 h-12 text-green-400 mx-auto mb-4" />
+            <div className="text-3xl font-bold text-white mb-1">{formatCurrency(kpis.valorTotal)}</div>
+            <div className="text-gray-300">Valor Total (R$)</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all text-center">
+            <Target className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
+            <div className="text-3xl font-bold text-white mb-1">{kpis.atingimento.toFixed(1)}%</div>
+            <div className="text-gray-300">Atingimento de Meta</div>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all text-center">
+            <Users className="w-12 h-12 text-purple-400 mx-auto mb-4" />
+            <div className="text-3xl font-bold text-white mb-1">{kpis.oportunidades}</div>
+            <div className="text-gray-300">Oportunidades</div>
+          </div>
+        </div>
+
+        {/* Material Cards */}
+        <div className="mb-12">
+          <h2 className="text-3xl font-bold text-white mb-8 flex items-center">
+            <TrendingUp className="w-8 h-8 mr-3 text-blue-400" />
+            Materiais
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            {Object.entries(materialStats).map(([material, stats]) => {
+              const progress = kpis.volumeTotal > 0 ? (stats.volume / kpis.volumeTotal) * 100 : 0;
+              return (
+                <div key={material} className="bg-white/10 backdrop-blur-xl p-6 rounded-3xl border border-white/20 shadow-2xl hover:shadow-3xl transition-all">
+                  <h3 className="text-xl font-bold text-white mb-4 capitalize">{material}</h3>
+                  <div className="text-2xl font-bold text-white mb-2">{formatNumber(stats.volume)} kg</div>
+                  <div className="text-lg text-gray-300 mb-4">{formatCurrency(stats.valor)}</div>
+                  <div className="w-full bg-gray-700 rounded-full h-3">
                     <div
-                      className={`h-full ${item.color} shadow-lg transition-all duration-700 ease-out`}
-                      style={{ width: `${(item.value / maxFunnelValue) * 100}%` }}
+                      className="bg-gradient-to-r from-blue-500 to-indigo-500 h-3 rounded-full transition-all"
+                      style={{ width: `${progress}%` }}
                     />
                   </div>
-                  <div className="w-24 text-right text-2xl font-black text-white">
-                    {item.value}
-                  </div>
+                  <div className="text-right text-sm text-gray-400 mt-1">{progress.toFixed(1)}%</div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Top Clientes */}
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all overflow-hidden">
-            <h2 className="text-3xl font-bold text-white mb-8">🏆 Top 10 Clientes</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left pb-6 pr-8 py-2 text-gray-300 font-bold text-lg w-2/3">Cliente</th>
-                    <th className="text-right pb-6 py-2 text-gray-300 font-bold text-lg">Faturado</th>
-                    <th className="text-right pb-6 py-2 text-gray-300 font-bold text-lg">Pedidos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topClientes.map((cliente, index) => (
-                    <tr
-                      key={cliente.cliente}
-                      className="border-b border-white/5 hover:bg-white/10 transition-all group"
-                    >
-                      <td className="py-6 pr-8 font-semibold text-white text-lg group-hover:text-blue-300">
-                        {cliente.cliente}
-                      </td>
-                      <td className="py-6 text-right font-black text-2xl text-green-400">
-                        {formatCurrency(cliente.valor)}
-                      </td>
-                      <td className="py-6 text-right font-bold text-blue-400 text-xl">
-                        {cliente.count}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Export */}
-        <div className="text-center pt-12">
-          <button
-            onClick={exportToExcel}
-            className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700 text-white font-black py-8 px-20 rounded-3xl text-2xl shadow-2xl hover:shadow-4xl hover:-translate-y-2 transition-all duration-300 backdrop-blur-sm border-2 border-white/20 group"
-          >
-            <span className="group-hover:scale-110 transition-transform">📊 Exportar Excel Completo</span>
-          </button>
+        {/* Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+          {/* Volume por Material */}
+          <div className="lg:col-span-1 bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <Activity className="w-6 h-6 mr-2 text-blue-400" />
+              Volume por Material (kg)
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={Object.entries(materialStats).map(([name, s]) => ({ name, volume: s.volume }))}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="volume" fill="#3B82F6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Evolução Faturamento */}
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <TrendingUp className="w-6 h-6 mr-2 text-green-400" />
+              Evolução Faturamento (R$)
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={faturamentoPorData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="valor" stroke="#10B981" strokeWidth={3} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Fluxo Comercial (Funil) */}
+          <div className="bg-white/10 backdrop-blur-xl p-8 rounded-3xl border border-white/20 shadow-2xl">
+            <h3 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <Activity className="w-6 h-6 mr-2 text-purple-400" />
+              Fluxo Comercial
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={etapasData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis dataKey="etapa" type="category" width={150} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#8B5CF6" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Top Clientes Table */}
+        <div>
+          <h2 className="text-3xl font-bold text-white mb-8 flex items-center">
+            <Users className="w-8 h-8 mr-3 text-indigo-400" />
+            Top 10 Clientes
+          </h2>
+          <div className="bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-white/20">
+                  <th className="p-6 text-left text-lg font-bold text-white">Cliente</th>
+                  <th className="p-6 text-right text-lg font-bold text-white">Volume (kg)</th>
+                  <th className="p-6 text-right text-lg font-bold text-white">Valor (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topClientes.map(({ cliente, volume, valor }, index) => (
+                  <tr key={cliente} className="border-t border-white/10 hover:bg-white/5 transition">
+                    <td className="p-6 font-semibold text-white">{cliente}</td>
+                    <td className="p-6 text-right text-gray-300">{formatNumber(volume)}</td>
+                    <td className="p-6 text-right text-green-400 font-bold">{formatCurrency(valor)}</td>
+                  </tr>
+                ))}
+                {topClientes.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="p-12 text-center text-gray-500">
+                      Sem dados para exibir
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
