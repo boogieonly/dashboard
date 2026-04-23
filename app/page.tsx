@@ -187,7 +187,7 @@ export default function DashboardPage() {
 
         {/* Integração FechamentoMensal */}
         <div className="mt-12">
-          <FechamentoMensal data={filteredData} />
+          <FechamentoMensal />
         </div>
       </div>
     </main>
