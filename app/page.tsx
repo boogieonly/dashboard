@@ -1,359 +1,327 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 type Material = {
   name: string;
-  weight: number;
+  used: number;
+  total: number;
   value: number;
-  quantity: number;
 };
 
-const exampleData: Material[] = [
-  { name: 'Aço Carbono', weight: 1500, value: 4500, quantity: 100 },
-  { name: 'Alumínio', weight: 800, value: 3200, quantity: 200 },
-  { name: 'Aço Inox', weight: 1200, value: 7200, quantity: 80 },
-  { name: 'Cobre', weight: 300, value: 4500, quantity: 50 },
-  { name: 'Latão', weight: 400, value: 2800, quantity: 60 },
-];
-
-const glassStyle = 'bg-gray-900/30 backdrop-blur-xl border border-white/10 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-[1.02]';
-
-const KpiCard: React.FC<{ title: string; value: string }> = ({ title, value }) => (
-  <div className={`${glassStyle} p-8 rounded-3xl text-center min-h-[120px] flex flex-col justify-center`}>
-    <div className="text-3xl font-bold text-white mb-2">{value}</div>
-    <div className="text-gray-400 text-sm uppercase tracking-wide font-medium">{title}</div>
-  </div>
-);
-
-const MaterialCard: React.FC<{
-  material: Material;
-  totalWeight: number;
-  onClick: () => void;
-  onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onMouseLeave: () => void;
-}> = ({ material, totalWeight, onClick, onMouseEnter, onMouseLeave }) => {
-  const percent = totalWeight > 0 ? (material.weight / totalWeight) * 100 : 0;
-
-  return (
-    <div
-      className={`${glassStyle} p-8 rounded-3xl cursor-pointer relative group min-h-[280px] flex flex-col justify-between`}
-      onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      <div>
-        <h3 className="text-2xl font-bold text-white mb-4 group-hover:text-blue-400 transition-colors">{material.name}</h3>
-        <div className="space-y-3 mb-6 text-lg">
-          <div className="flex justify-between">
-            <span className="text-gray-400">Peso:</span>
-            <span className="font-bold text-white">{material.weight.toLocaleString()} kg</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-400">Valor:</span>
-            <span className="font-bold text-white">R$ {material.value.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-400">Qtd:</span>
-            <span className="font-bold text-white">{material.quantity.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div className="flex justify-between text-sm mb-3 text-gray-400">
-          <span>% do Peso Total</span>
-          <span className="font-bold text-white">{percent.toFixed(1)}%</span>
-        </div>
-        <div className="w-full bg-gray-800/50 rounded-full h-4 overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-blue-500 to-indigo-500 h-4 rounded-full transition-all duration-500 shadow-inner"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
+type Kpi = {
+  title: string;
+  value: string;
+  change?: number;
+  tooltip: string;
 };
 
-const DetailModal: React.FC<{ material: Material; onClose: () => void }> = ({ material, onClose }) => (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
-    <div className={`${glassStyle} max-w-2xl w-full max-h-[90vh] overflow-y-auto p-10 rounded-3xl`}>
-      <h3 className="text-4xl font-bold text-white mb-8">{material.name}</h3>
-      <div className="grid md:grid-cols-2 gap-8 mb-10">
-        <div>
-          <div className="space-y-4 text-2xl">
-            <div><span className="text-gray-400">Peso:</span> <span className="text-white font-bold">{material.weight.toLocaleString()} kg</span></div>
-            <div><span className="text-gray-400">Valor:</span> <span className="text-white font-bold">R$ {material.value.toLocaleString()}</span></div>
-            <div><span className="text-gray-400">Quantidade:</span> <span className="text-white font-bold">{material.quantity.toLocaleString()}</span></div>
-          </div>
-        </div>
-        <div className="bg-gray-800/30 p-6 rounded-2xl">
-          <h4 className="text-xl font-bold text-white mb-4">Detalhes Adicionais</h4>
-          <p className="text-gray-300">Material de alta qualidade utilizado na fabricação de estruturas metálicas.</p>
-        </div>
-      </div>
-      <button
-        onClick={onClose}
-        className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 py-4 rounded-2xl text-xl font-bold text-white transition-all shadow-lg"
-      >
-        Fechar
-      </button>
+const TooltipWrapper: React.FC<{ children: React.ReactNode; content: React.ReactNode }> = ({ children, content }) => (
+  <div className="group relative">
+    {children}
+    <div className="absolute z-50 invisible group-hover:visible group-hover:opacity-100 opacity-0 transition-all duration-300 bg-gray-900/95 backdrop-blur-xl border border-gray-700/50 text-white text-sm px-4 py-3 rounded-2xl shadow-2xl -top-16 left-1/2 -translate-x-1/2 whitespace-normal max-w-xs text-left before:absolute before:w-0 before:h-0 before:left-1/2 before:-translate-x-1/2 before:top-full before:border-8 before:border-t-gray-900/95 before:border-l-transparent before:border-r-transparent">
+      {content}
     </div>
   </div>
 );
 
-export default function Home() {
-  const [materials, setMaterials] = useState<Material[]>(exampleData);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
-  const [tooltip, setTooltip] = useState<{ material: Material; x: number; y: number } | null>(null);
+export default function Page() {
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [kpis, setKpis] = useState<Kpi[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [chartData, setChartData] = useState<Array<{ name: string; stock: number }>>([]);
 
-  const totals = useMemo(() => {
-    const totalWeight = materials.reduce((sum, m) => sum + m.weight, 0);
-    const totalValue = materials.reduce((sum, m) => sum + m.value, 0);
-    const totalQuantity = materials.reduce((sum, m) => sum + m.quantity, 0);
-    const numMaterials = materials.length;
-    const avgWeightPerMaterial = numMaterials > 0 ? totalWeight / numMaterials : 0;
-    const avgValuePerItem = totalQuantity > 0 ? totalValue / totalQuantity : 0;
-    return {
-      totalWeight,
-      totalValue,
-      totalQuantity,
-      avgWeightPerMaterial,
-      avgValuePerItem,
-      numMaterials,
-    };
-  }, [materials]);
+  useEffect(() => {
+    const mats: Material[] = [
+      { name: 'Aço Carbono', used: 6000, total: 10000, value: 200000 },
+      { name: 'Alumínio', used: 2000, total: 5000, value: 100000 },
+      { name: 'Aço Inox', used: 2400, total: 3000, value: 150000 },
+      { name: 'Cobre', used: 200, total: 1000, value: 50000 },
+    ];
+    setMaterials(mats);
 
-  const chartData = useMemo(
-    () => materials.map((m) => ({ name: m.name, weight: m.weight })),
-    [materials]
-  );
+    const totalValue = mats.reduce((sum, m) => sum + m.value, 0);
+    const totalUsed = mats.reduce((sum, m) => sum + m.used, 0);
+    const totalStock = mats.reduce((sum, m) => sum + m.total, 0);
+    const usedPercent = totalStock > 0 ? Math.round((totalUsed / totalStock) * 100) : 0;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const kps: Kpi[] = [
+      { title: 'Valor Total Estoque', value: `R$ ${totalValue.toLocaleString()}`, tooltip: 'Valor total atual do estoque de materiais' },
+      { title: 'Material Utilizado', value: `${usedPercent}%`, change: usedPercent, tooltip: 'Porcentagem total de material já utilizado' },
+      { title: 'Eficiência', value: '92%', change: 92, tooltip: 'Taxa de eficiência da produção no mês' },
+      { title: 'Pedidos Concluídos', value: '45/50', tooltip: 'Número de pedidos finalizados este mês' },
+      { title: 'Desperdício', value: '3%', change: 3, tooltip: 'Percentual médio de desperdício de materiais' },
+    ];
+    setKpis(kps);
+
+    const chData = [
+      { name: 'Jan', stock: 4000 },
+      { name: 'Fev', stock: 3000 },
+      { name: 'Mar', stock: 5000 },
+      { name: 'Abr', stock: 4500 },
+      { name: 'Mai', stock: 3800 },
+    ];
+    setChartData(chData);
+  }, []);
+
+  const getPercent = (material: Material): number => {
+    return material.total > 0 ? Math.round((material.used / material.total) * 100) : 0;
+  };
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      /* eslint-disable @typescript-eslint/no-explicit-any */
-      const data = XLSX.utils.sheet_to_json<any[]>(ws);
-      /* eslint-enable @typescript-eslint/no-explicit-any */
+    reader.onload = (evt: ProgressEvent<FileReader>) => {
+      const data = evt.target?.result as ArrayBuffer;
+      if (!data) return;
 
-      const parsed: Material[] = data
-        .map((row) => ({
-          name: (row.Material || row['Nome do Material'] || '').toString(),
-          weight: parseFloat((row.Peso || row['Peso (kg)'] || '0') as string) || 0,
-          value: parseFloat((row.Valor || row['Valor (R$)'] || '0') as string) || 0,
-          quantity: parseInt((row.Quantidade || row['Qtd'] || '0') as string, 10) || 0,
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+
+      const newMaterials: Material[] = json
+        .map((row: any) => ({
+          name: String(row.name || ''),
+          used: parseFloat(String(row.used || 0)) || 0,
+          total: parseFloat(String(row.total || 0)) || 0,
+          value: parseFloat(String(row.value || 0)) || 0,
         }))
-        .filter((m) => m.name && m.weight > 0);
+        .filter((m) => m.name.trim());
 
-      setMaterials(parsed);
-      setShowUploadModal(false);
+      setMaterials(newMaterials);
+
+      const totalValue = newMaterials.reduce((sum, m) => sum + m.value, 0);
+      const totalUsed = newMaterials.reduce((sum, m) => sum + m.used, 0);
+      const totalStock = newMaterials.reduce((sum, m) => sum + m.total, 0);
+      const usedPercent = totalStock > 0 ? Math.round((totalUsed / totalStock) * 100) : 0;
+
+      const kps: Kpi[] = [
+        { title: 'Valor Total Estoque', value: `R$ ${totalValue.toLocaleString()}`, tooltip: 'Valor total atual do estoque de materiais' },
+        { title: 'Material Utilizado', value: `${usedPercent}%`, change: usedPercent, tooltip: 'Porcentagem total de material já utilizado' },
+        { title: 'Eficiência', value: '92%', change: 92, tooltip: 'Taxa de eficiência da produção no mês' },
+        { title: 'Pedidos Concluídos', value: '45/50', tooltip: 'Número de pedidos finalizados este mês' },
+        { title: 'Desperdício', value: '3%', change: 3, tooltip: 'Percentual médio de desperdício de materiais' },
+      ];
+      setKpis(kps);
+
+      setShowModal(false);
+      e.target.value = '';
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
-  const exportExcel = useCallback(() => {
+  const exportExcel = () => {
     const wsData = materials.map((m) => ({
       Material: m.name,
-      'Peso (kg)': m.weight,
-      'Valor (R$)': m.value,
-      Quantidade: m.quantity,
-      '% Peso': `${((m.weight / totals.totalWeight) * 100).toFixed(1)}%`,
+      'Usado (kg)': m.used,
+      'Total (kg)': m.total,
+      'Valor (R$)': `R$ ${m.value.toLocaleString()}`,
     }));
     const ws = XLSX.utils.json_to_sheet(wsData);
-
-    const summaryData = [
-      { KPI: 'Peso Total', Valor: `${totals.totalWeight.toLocaleString()} kg` },
-      { KPI: 'Valor Total', Valor: `R$ ${totals.totalValue.toLocaleString()}` },
-      { KPI: 'Total de Itens', Valor: totals.totalQuantity.toLocaleString() },
-      { KPI: 'Peso Médio por Material', Valor: `${totals.avgWeightPerMaterial.toFixed(0)} kg` },
-      { KPI: 'Valor Médio por Item', Valor: `R$ ${totals.avgValuePerItem.toFixed(2)}` },
-    ];
-    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Materiais');
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumo');
+    XLSX.writeFile(wb, 'metalfama_materiais.xlsx');
+  };
 
-    XLSX.writeFile(
-      wb,
-      `relatorio-metalfama-${new Date().toISOString().slice(0, 10)}.xlsx`
-    );
-    setShowExportMenu(false);
-  }, [materials, totals]);
+  const exportPDF = async () => {
+    const element = document.getElementById('dashboard-content') as HTMLElement;
+    if (!element) return;
 
-  const exportPDF = useCallback(() => {
-    const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.text('Relatório Metalfama', 20, 20);
-    doc.setFontSize(12);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 20, 35);
-
-    // KPIs
-    let startY = 50;
-    doc.text(`Peso Total: ${totals.totalWeight.toLocaleString()} kg`, 20, startY);
-    startY += 10;
-    doc.text(`Valor Total: R$ ${totals.totalValue.toLocaleString()}`, 20, startY);
-    startY += 10;
-    doc.text(`Total Itens: ${totals.totalQuantity.toLocaleString()}`, 20, startY);
-    startY += 20;
-
-    autoTable(doc, {
-      startY,
-      head: [['Material', 'Peso (kg)', 'Valor (R$)', 'Quantidade', '% Peso']],
-      body: materials.map((m) => [
-        m.name,
-        m.weight.toLocaleString(),
-        m.value.toLocaleString(),
-        m.quantity.toLocaleString(),
-        `${((m.weight / totals.totalWeight) * 100).toFixed(1)}%`,
-      ]),
-      theme: 'grid',
-      headStyles: { fillColor: [59, 130, 246] },
-      styles: { fontSize: 10 },
-    });
-
-    doc.save(`relatorio-metalfama-${new Date().toISOString().slice(0, 10)}.pdf`);
-    setShowExportMenu(false);
-  }, [materials, totals]);
+    try {
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#0f0f2a',
+        scale: window.devicePixelRatio > 1 ? 2 : 1,
+        useCORS: true,
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+      while (heightLeft >= 0) {
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -heightLeft + imgHeight - pdfHeight, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+      pdf.save('dashboard_metalfama.pdf');
+    } catch (error) {
+      console.error('Erro ao exportar PDF:', error);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-indigo-900/20 to-black p-8 font-sans">
-      {/* Header */}
-      <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-16 gap-6">
-        <h1 className={`${glassStyle} px-12 py-8 rounded-3xl text-5xl lg:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-blue-400 backdrop-blur-xl`}>
-          Metalfama Dashboard
-        </h1>
-        <div className="flex gap-4 w-full lg:w-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-900/30 to-slate-900 p-4 sm:p-8 lg:p-12">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-12 lg:mb-16">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black bg-gradient-to-r from-white via-indigo-100 to-purple-200 bg-clip-text text-transparent drop-shadow-2xl mb-4">
+            Dashboard Metalfama
+          </h1>
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto">Gestão avançada de estoque, produção e eficiência operacional.</p>
+        </div>
+
+        {/* Controls */}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 lg:mb-20">
           <button
-            onClick={() => setShowUploadModal(true)}
-            className={`${glassStyle} px-8 py-4 rounded-2xl text-xl font-semibold text-white flex-1 lg:flex-none`}
+            onClick={() => setShowModal(true)}
+            className="px-6 py-3 sm:px-8 sm:py-4 bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/20 rounded-2xl text-white font-semibold text-base sm:text-lg transition-all duration-300 shadow-2xl hover:shadow-3xl active:scale-[0.98]"
           >
             📁 Upload Excel
           </button>
-          <div className="relative flex-1 lg:flex-none">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className={`${glassStyle} px-8 py-4 rounded-2xl text-xl font-semibold text-white w-full lg:w-auto`}
-            >
-              📊 Exportar
-            </button>
-            {showExportMenu && (
-              <div className={`${glassStyle} absolute right-0 mt-2 w-48 p-2 rounded-2xl shadow-3xl z-40`}>
-                <button
-                  onClick={exportPDF}
-                  className="w-full text-left px-4 py-3 rounded-xl hover:bg-white/20 transition-colors font-medium"
-                >
-                  📄 PDF
-                </button>
-                <button
-                  onClick={exportExcel}
-                  className="w-full text-left px-4 py-3 rounded-xl hover:bg-white/20 transition-colors font-medium mt-1"
-                >
-                  📈 Excel
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={exportPDF}
+            className="px-6 py-3 sm:px-8 sm:py-4 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 hover:from-indigo-400/30 hover:to-purple-400/30 backdrop-blur-xl border border-indigo-400/30 rounded-2xl text-white font-semibold text-base sm:text-lg transition-all duration-300 shadow-2xl hover:shadow-3xl active:scale-[0.98]"
+          >
+            📄 Exportar PDF
+          </button>
+          <button
+            onClick={exportExcel}
+            className="px-6 py-3 sm:px-8 sm:py-4 bg-gradient-to-r from-emerald-500/20 to-green-500/20 hover:from-emerald-400/30 hover:to-green-400/30 backdrop-blur-xl border border-emerald-400/30 rounded-2xl text-white font-semibold text-base sm:text-lg transition-all duration-300 shadow-2xl hover:shadow-3xl active:scale-[0.98]"
+          >
+            📊 Exportar Excel
+          </button>
         </div>
-      </header>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-16">
-        <KpiCard title="Peso Total" value={`${totals.totalWeight.toLocaleString()} kg`} />
-        <KpiCard title="Valor Total" value={`R$ ${totals.totalValue.toLocaleString()}`} />
-        <KpiCard title="Peso Médio / Material" value={`${totals.avgWeightPerMaterial.toFixed(0)} kg`} />
-        <KpiCard title="Valor Médio / Item" value={`R$ ${totals.avgValuePerItem.toFixed(2)}`} />
-        <KpiCard title="Total de Itens" value={totals.totalQuantity.toLocaleString()} />
+        <div id="dashboard-content">
+          {/* KPIs */}
+          <section className="mb-16 lg:mb-24">
+            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-8 text-center">KPIs Principais</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
+              {kpis.map((kpi, index) => (
+                <TooltipWrapper key={index} content={kpi.tooltip}>
+                  <div className="group bg-white/5 hover:bg-white/10 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 sm:p-8 text-center shadow-2xl hover:shadow-3xl transition-all duration-300 h-[180px] sm:h-[200px] flex flex-col justify-center hover:-translate-y-1">
+                    <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-white/90 mb-3 truncate">
+                      {kpi.title}
+                    </h3>
+                    <div className="text-3xl sm:text-4xl lg:text-5xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-4 drop-shadow-lg">
+                      {kpi.value}
+                    </div>
+                    {kpi.change !== undefined && (
+                      <div className="w-full bg-gray-700/50 backdrop-blur-sm rounded-full h-3 border border-gray-600/30 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-emerald-500 to-teal-500 h-3 rounded-full shadow-md transition-all duration-500"
+                          style={{ width: `${kpi.change}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </TooltipWrapper>
+              ))}
+            </div>
+          </section>
+
+          {/* Materials */}
+          <section className="mb-16 lg:mb-24">
+            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-8 text-center">Materiais em Estoque</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {materials.map((material, index) => {
+                const percent = getPercent(material);
+                return (
+                  <TooltipWrapper
+                    key={index}
+                    content={(
+                      <div className="space-y-1">
+                        <p><span className="font-semibold">Usado:</span> {material.used.toLocaleString()} kg</p>
+                        <p><span className="font-semibold">Total:</span> {material.total.toLocaleString()} kg</p>
+                        <p><span className="font-semibold">Valor:</span> R$ {material.value.toLocaleString()}</p>
+                      </div>
+                    )}
+                  >
+                    <div className="group bg-white/5 hover:bg-white/10 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 lg:p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 h-[260px] lg:h-[280px] flex flex-col justify-between hover:-translate-y-1">
+                      <div>
+                        <h3 className="text-xl lg:text-2xl font-bold text-white mb-4 truncate">
+                          {material.name}
+                        </h3>
+                        <div className="text-4xl lg:text-5xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-6 drop-shadow-lg">
+                          {percent}%
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-700/50 backdrop-blur-sm rounded-full h-4 lg:h-5 border border-gray-600/50 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-4 lg:h-5 rounded-full shadow-lg transition-all duration-700 relative overflow-hidden"
+                          style={{ width: `${percent}%` }}
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 animate-pulse" />
+                        </div>
+                      </div>
+                      <div className="text-base lg:text-lg text-gray-300 mt-3 text-center font-semibold">
+                        R$ {material.value.toLocaleString()}
+                      </div>
+                    </div>
+                  </TooltipWrapper>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Chart */}
+          <section>
+            <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 lg:p-8 shadow-2xl hover:shadow-3xl transition-all duration-300">
+              <h2 className="text-3xl lg:text-4xl font-bold text-white mb-8 text-center">Evolução do Estoque Mensal</h2>
+              <ResponsiveContainer width="100%" height={450}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="5 5" stroke="#374151" vertical={false} strokeOpacity={0.5} />
+                  <XAxis dataKey="name" stroke="#9CA3AF" tickLine={false} axisLine={false} fontSize={14} tickMargin={12} />
+                  <YAxis stroke="#9CA3AF" tickLine={false} axisLine={false} fontSize={14} tickMargin={12} />
+                  <RechartsTooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="stock"
+                    stroke="#A78BFA"
+                    strokeWidth={4}
+                    dot={{ fill: '#A78BFA', strokeWidth: 3, r: 6 }}
+                    activeDot={{ r: 10, strokeWidth: 3 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </div>
       </div>
 
-      {/* Materials Cards */}
-      <section className="mb-16">
-        <h2 className="text-4xl font-bold text-white mb-8 glass px-8 py-4 rounded-2xl w-fit backdrop-blur">Materiais</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {materials.map((material, index) => (
-            <MaterialCard
-              key={index}
-              material={material}
-              totalWeight={totals.totalWeight}
-              onClick={() => setSelectedMaterial(material)}
-              onMouseEnter={(e) => setTooltip({ material, x: e.clientX, y: e.clientY })}
-              onMouseLeave={() => setTooltip(null)}
-            />
-          ))}
-        </div>
-      </section>
-
-      {/* Chart */}
-      <section>
-        <div className={`${glassStyle} p-12 rounded-4xl`}>
-          <h2 className="text-4xl font-bold text-white mb-12 glass px-8 py-4 rounded-2xl w-fit backdrop-blur inline-block">
-            Gráfico de Pesos
-          </h2>
-          <ResponsiveContainer width="100%" height={500}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="5 5" vertical={false} stroke="rgba(255,255,255,0.1)" />
-              <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} stroke="#9CA3AF" fontSize={12} />
-              <YAxis stroke="#9CA3AF" fontSize={12} />
-              <RechartsTooltip />
-              <Bar dataKey="weight" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      {/* Modals */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-8">
-          <div className={`${glassStyle} max-w-md w-full p-10 rounded-3xl`}>
-            <h3 className="text-3xl font-bold text-white mb-8">Upload Excel</h3>
+      {/* Upload Modal */}
+      {showModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
+          onClick={() => setShowModal(false)}
+        >
+          <div
+            className="bg-white/10 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 lg:p-12 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-3xl hover:shadow-4xl transition-all duration-300 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-2xl lg:text-3xl font-bold text-white mb-6 text-center">Upload Excel</h2>
+            <p className="text-gray-300 mb-8 text-center text-sm lg:text-base leading-relaxed">
+              Selecione um arquivo .xlsx com colunas: <code className="bg-gray-800 px-2 py-1 rounded text-indigo-300 font-mono text-xs">name</code>,{' '}
+              <code className="bg-gray-800 px-2 py-1 rounded text-indigo-300 font-mono text-xs">used</code>,{' '}
+              <code className="bg-gray-800 px-2 py-1 rounded text-indigo-300 font-mono text-xs">total</code>,{' '}
+              <code className="bg-gray-800 px-2 py-1 rounded text-indigo-300 font-mono text-xs">value</code>
+            </p>
             <input
               type="file"
               accept=".xlsx,.xls"
-              onChange={handleFileUpload}
-              className="w-full p-4 bg-gray-800/50 border-2 border-dashed border-white/30 rounded-2xl text-lg text-white file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-lg file:font-semibold file:bg-gradient-to-r file:from-blue-500 file:to-indigo-600 file:text-white hover:file:brightness-110 transition-all cursor-pointer"
+              onChange={handleUpload}
+              className="w-full p-4 bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white placeholder-gray-400 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:bg-gradient-to-r file:from-indigo-500 file:to-purple-500 file:text-white file:font-semibold file:text-sm hover:file:from-indigo-400 hover:file:to-purple-400 file:transition-all file:shadow-lg backdrop-blur-sm transition-all duration-300 text-sm"
             />
             <button
-              onClick={() => setShowUploadModal(false)}
-              className="mt-8 w-full bg-gray-700/50 hover:bg-gray-600 py-4 rounded-2xl text-xl text-white font-semibold transition-all"
+              onClick={() => setShowModal(false)}
+              className="mt-8 w-full py-4 bg-gray-700/50 hover:bg-gray-600/60 backdrop-blur-xl border border-gray-500/50 rounded-2xl text-white font-semibold text-lg transition-all duration-300 shadow-xl hover:shadow-2xl active:scale-[0.98]"
             >
-              Cancelar
+              Fechar
             </button>
           </div>
-        </div>
-      )}
-
-      {selectedMaterial && (
-        <DetailModal material={selectedMaterial} onClose={() => setSelectedMaterial(null)} />
-      )}
-
-      {/* Tooltip */}
-      {tooltip && (
-        <div
-          className={`${glassStyle} p-4 rounded-2xl text-sm shadow-3xl z-[100] max-w-xs pointer-events-none whitespace-normal`}
-          style={{
-            position: 'fixed',
-            left: `${tooltip.x + 10}px`,
-            top: `${tooltip.y - 10}px`,
-            transform: 'translateY(-100%)',
-          }}
-        >
-          <div className="font-bold text-white text-lg mb-2">{tooltip.material.name}</div>
-          <div>Peso: <span className="font-semibold text-blue-400">{tooltip.material.weight.toLocaleString()} kg</span></div>
-          <div>Valor: <span className="font-semibold text-green-400">R$ {tooltip.material.value.toLocaleString()}</span></div>
-          <div>Qtd: <span className="font-semibold text-purple-400">{tooltip.material.quantity.toLocaleString()}</span></div>
         </div>
       )}
     </div>
