@@ -1,6 +1,39 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+'use client';
 
-interface Registro {
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+} from 'recharts';
+
+type DailyRecord = {
+  data: number;
+  faturado: number;
+  atraso: number;
+  vendido: number;
+  carteiraTotal: number;
+  previsaoMesAtual: number;
+  previsaoProxMes: number;
+};
+
+type Metrics = {
+  totalFaturado: number;
+  totalAtraso: number;
+  totalVendido: number;
+  totalCarteira: number;
+  mediaPrevisaoMes: number;
+  mediaPrevisaoProxMes: number;
+};
+
+type FormState = {
   data: string;
   faturado: number;
   atraso: number;
@@ -8,12 +41,21 @@ interface Registro {
   carteiraTotal: number;
   previsaoMesAtual: number;
   previsaoProxMes: number;
-}
+};
+
+type Errors = Partial<Record<keyof FormState, string>>;
+
+const STORAGE_KEY = 'fechamentoMensalRecords';
+
+const glassClass = 'bg-white/20 backdrop-blur-xl border border-white/40 shadow-2xl rounded-3xl hover:shadow-3xl transition-all duration-300 hover:scale-[1.02]';
+
+const inputClass = 'w-full px-4 py-3 bg-white/60 border border-white/50 rounded-xl focus:outline-none focus:ring-4 focus:ring-purple-500/50 focus:border-transparent backdrop-blur-sm text-gray-900 placeholder-gray-500 transition-all duration-300 text-lg';
+
+const labelClass = 'block text-sm font-semibold text-gray-700 mb-2 tracking-wide';
 
 const FechamentoMensal: React.FC = () => {
-  // Estados para registros e formulário
-  const [registros, setRegistros] = useState<Registro[]>([]);
-  const [form, setForm] = useState<Registro>({
+  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
+  const [formState, setFormState] = useState<FormState>({
     data: '',
     faturado: 0,
     atraso: 0,
@@ -22,98 +64,165 @@ const FechamentoMensal: React.FC = () => {
     previsaoMesAtual: 0,
     previsaoProxMes: 0,
   });
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<Errors>({});
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Refs para canvases dos gráficos
-  const chartRef1 = useRef<HTMLCanvasElement>(null);
-  const chartRef2 = useRef<HTMLCanvasElement>(null);
-
-  // Carrega dados do localStorage ao montar o componente
-  useEffect(() => {
-    const saved = localStorage.getItem('fechamentoMensal');
-    if (saved) {
-      const parsed: Registro[] = JSON.parse(saved);
-      setRegistros(parsed);
+  const metrics = useMemo((): Metrics => {
+    const n = dailyRecords.length;
+    if (n === 0) {
+      return {
+        totalFaturado: 0,
+        totalAtraso: 0,
+        totalVendido: 0,
+        totalCarteira: 0,
+        mediaPrevisaoMes: 0,
+        mediaPrevisaoProxMes: 0,
+      };
     }
+    const sums = dailyRecords.reduce(
+      (acc, r) => ({
+        faturado: acc.faturado + r.faturado,
+        atraso: acc.atraso + r.atraso,
+        vendido: acc.vendido + r.vendido,
+        carteiraTotal: acc.carteiraTotal + r.carteiraTotal,
+      }),
+      { faturado: 0, atraso: 0, vendido: 0, carteiraTotal: 0 }
+    );
+    const avgs = dailyRecords.reduce(
+      (acc, r) => ({
+        prevMes: acc.prevMes + r.previsaoMesAtual,
+        prevProx: acc.prevProx + r.previsaoProxMes,
+      }),
+      { prevMes: 0, prevProx: 0 }
+    );
+    return {
+      totalFaturado: sums.faturado,
+      totalAtraso: sums.atraso,
+      totalVendido: sums.vendido,
+      totalCarteira: sums.carteiraTotal,
+      mediaPrevisaoMes: avgs.prevMes / n,
+      mediaPrevisaoProxMes: avgs.prevProx / n,
+    };
+  }, [dailyRecords]);
 
-    // Define data de hoje se for dia útil e não duplicada
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    if (isDiaUtil(todayStr) && !isDuplicate(todayStr)) {
-      setForm(prev => ({ ...prev, data: todayStr }));
+  const chartData = useMemo(() => {
+    const sorted = [...dailyRecords].sort((a, b) => a.data - b.data);
+    return sorted.map((r) => ({
+      date: new Date(r.data).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+      }),
+      faturado: r.faturado,
+      vendido: r.vendido,
+      atraso: r.atraso,
+      previsao: r.previsaoMesAtual,
+    }));
+  }, [dailyRecords]);
+
+  const tableRecords = useMemo(
+    () => [...dailyRecords].sort((a, b) => b.data - a.data),
+    [dailyRecords]
+  );
+
+  const saveToStorage = useCallback((records: DailyRecord[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    } catch (err) {
+      console.error('Erro ao salvar no localStorage:', err);
     }
   }, []);
 
-  // Salva no localStorage e redesenha gráficos sempre que registros mudarem
+  const loadFromStorage = useCallback(() => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        setDailyRecords(JSON.parse(data));
+      }
+    } catch (err) {
+      console.error('Erro ao carregar do localStorage:', err);
+      setDailyRecords([]);
+    }
+  }, []);
+
   useEffect(() => {
-    localStorage.setItem('fechamentoMensal', JSON.stringify(registros));
-    drawCharts();
-  }, [registros]);
+    loadFromStorage();
+  }, [loadFromStorage]);
 
-  // Função para verificar se é dia útil (segunda a sexta)
-  const isDiaUtil = (dataStr: string): boolean => {
-    const date = new Date(dataStr + 'T00:00:00');
-    const dia = date.getDay();
-    return dia >= 1 && dia <= 5;
-  };
+  useEffect(() => {
+    saveToStorage(dailyRecords);
+  }, [dailyRecords, saveToStorage]);
 
-  // Verifica se data já existe nos registros
-  const isDuplicate = (dataStr: string): boolean => {
-    return registros.some(r => r.data === dataStr);
-  };
+  const clearFieldError = useCallback((field: keyof FormState) => {
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+  }, []);
 
-  // Manipula mudanças nos inputs do formulário
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const name = e.target.name as keyof Registro;
-    const value = e.target.value;
-    if (name === 'data') {
-      setForm(prev => ({ ...prev, data: value }));
+  const handleAddRecord = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErrors({});
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const newErrors: Errors = {};
+
+    // Validate data
+    if (!formState.data) {
+      newErrors.data = 'Data é obrigatória.';
     } else {
-      setForm(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+      const date = new Date(formState.data + 'T12:00:00'); // Midday to avoid timezone issues
+      if (isNaN(date.getTime())) {
+        newErrors.data = 'Data inválida.';
+      } else {
+        const dayOfWeek = date.getDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          newErrors.data = 'Apenas dias úteis (segunda a sexta).';
+        } else {
+          const timestamp = date.getTime();
+          if (dailyRecords.some((r) => r.data === timestamp)) {
+            newErrors.data = 'Já existe um registro para esta data.';
+          }
+        }
+      }
     }
-  };
 
-  // Valida o formulário
-  const validateForm = (): string[] => {
-    const errs: string[] = [];
-    if (!form.data) {
-      errs.push('Data é obrigatória');
-      return errs;
-    }
-    if (!isDiaUtil(form.data)) {
-      errs.push('Apenas dias úteis (segunda a sexta)');
-    }
-    if (isDuplicate(form.data)) {
-      errs.push('Registro para esta data já existe');
-    }
-    const fields: (keyof Registro)[] = ['faturado', 'atraso', 'vendido', 'carteiraTotal', 'previsaoMesAtual', 'previsaoProxMes'];
-    fields.forEach((field) => {
-      if (form[field] < 0) {
-        errs.push(`Campo ${field.replace(/([A-Z])/g, ' $1').toLowerCase()} deve ser maior ou igual a 0`);
+    // Validate numbers
+    const numFields: (keyof FormState)[] = [
+      'faturado',
+      'atraso',
+      'vendido',
+      'carteiraTotal',
+      'previsaoMesAtual',
+      'previsaoProxMes',
+    ];
+    numFields.forEach((field) => {
+      if (formState[field] < 0 || isNaN(formState[field])) {
+        newErrors[field] = 'Valor deve ser maior ou igual a 0.';
       }
     });
-    return errs;
-  };
 
-  // Manipula envio do formulário
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const errs = validateForm();
-    setErrors(errs);
-    if (errs.length === 0) {
-      const newReg: Registro = { ...form };
-      setRegistros(prev => [...prev, newReg].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()));
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
-      // Calcula próxima data útil
-      let nextDate = new Date(form.data + 'T00:00:00');
-      nextDate.setDate(nextDate.getDate() + 1);
-      let nextStr = nextDate.toISOString().split('T')[0];
-      while (!isDiaUtil(nextStr)) {
-        nextDate.setDate(nextDate.getDate() + 1);
-        nextStr = nextDate.toISOString().split('T')[0];
-      }
-      setForm({
-        data: nextStr,
+    try {
+      const date = new Date(formState.data + 'T12:00:00');
+      const newRecord: DailyRecord = {
+        data: date.getTime(),
+        faturado: formState.faturado,
+        atraso: formState.atraso,
+        vendido: formState.vendido,
+        carteiraTotal: formState.carteiraTotal,
+        previsaoMesAtual: formState.previsaoMesAtual,
+        previsaoProxMes: formState.previsaoProxMes,
+      };
+      setDailyRecords((prev) => [...prev, newRecord]);
+      setFormState({
+        data: '',
         faturado: 0,
         atraso: 0,
         vendido: 0,
@@ -121,426 +230,366 @@ const FechamentoMensal: React.FC = () => {
         previsaoMesAtual: 0,
         previsaoProxMes: 0,
       });
-      setErrors([]);
+      setSuccessMsg('✅ Registro adicionado com sucesso!');
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      setErrorMsg(`❌ Erro ao adicionar registro: ${message}`);
     }
   };
 
-  // Limpa todos os registros com confirmação
-  const handleClear = () => {
-    if (confirm('Tem certeza que deseja limpar todos os registros? Esta ação não pode ser desfeita.')) {
-      setRegistros([]);
-    }
+  const handleRemoveRecord = (dataToRemove: number) => {
+    if (!confirm('Tem certeza que deseja remover este registro?')) return;
+    setDailyRecords((prev) => prev.filter((r) => r.data !== dataToRemove));
+    setSuccessMsg('🗑️ Registro removido com sucesso!');
+    setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  // Calcula totais dos indicadores
-  const calcularTotais = (): Omit<Registro, 'data'> => {
-    return {
-      faturado: registros.reduce((sum, r) => sum + r.faturado, 0),
-      atraso: registros.reduce((sum, r) => sum + r.atraso, 0),
-      vendido: registros.reduce((sum, r) => sum + r.vendido, 0),
-      carteiraTotal: registros.reduce((sum, r) => sum + r.carteiraTotal, 0),
-      previsaoMesAtual: registros.reduce((sum, r) => sum + r.previsaoMesAtual, 0),
-      previsaoProxMes: registros.reduce((sum, r) => sum + r.previsaoProxMes, 0),
-    };
+  const handleClearAll = () => {
+    if (!confirm(`Tem certeza que deseja limpar TODOS os ${dailyRecords.length} registros?`)) return;
+    setDailyRecords([]);
+    setSuccessMsg('🧹 Todos os registros foram limpos!');
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
-
-  const totais = calcularTotais();
-
-  // Desenha os gráficos usando Canvas
-  const drawCharts = useCallback(() => {
-    // Ordena registros por data ascendente para gráficos
-    const sorted = [...registros].sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
-
-    // Gráfico 1: Evolução Faturado vs Vendido (linhas)
-    const canvas1 = chartRef1.current;
-    if (canvas1 && sorted.length > 0) {
-      const ctx = canvas1.getContext('2d')!;
-      const rect = canvas1.getBoundingClientRect();
-      canvas1.width = rect.width;
-      canvas1.height = 200;
-      const w = canvas1.width;
-      const h = canvas1.height;
-      ctx.clearRect(0, 0, w, h);
-
-      // Fundo glass
-      const gradBg = ctx.createLinearGradient(0, 0, 0, h);
-      gradBg.addColorStop(0, 'rgba(255,255,255,0.1)');
-      gradBg.addColorStop(1, 'rgba(255,255,255,0.02)');
-      ctx.fillStyle = gradBg;
-      ctx.fillRect(0, 0, w, h);
-
-      if (sorted.length > 1) {
-        const maxY = Math.max(...sorted.map(r => Math.max(r.faturado, r.vendido))) * 1.1 || 1;
-        const stepX = w / (sorted.length - 1);
-
-        // Linha Faturado (azul)
-        ctx.strokeStyle = '#3B82F6';
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.shadowColor = '#3B82F6';
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        sorted.forEach((r, i) => {
-          const x = i * stepX;
-          const y = h - (r.faturado / maxY * (h - 40)) - 20;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Linha Vendido (verde)
-        ctx.strokeStyle = '#10B981';
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.shadowColor = '#10B981';
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        sorted.forEach((r, i) => {
-          const x = i * stepX;
-          const y = h - (r.vendido / maxY * (h - 40)) - 20;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Labels de datas no eixo X
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.font = 'bold 12px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        sorted.forEach((r, i) => {
-          const x = i * stepX;
-          ctx.fillText(r.data.slice(5,10), x, h - 5);
-        });
-      }
-    }
-
-    // Gráfico 2: Atraso por Dia (barras)
-    const canvas2 = chartRef2.current;
-    if (canvas2 && sorted.length > 0) {
-      const ctx = canvas2.getContext('2d')!;
-      const rect = canvas2.getBoundingClientRect();
-      canvas2.width = rect.width;
-      canvas2.height = 200;
-      const w = canvas2.width;
-      const h = canvas2.height;
-      ctx.clearRect(0, 0, w, h);
-
-      // Fundo glass
-      const gradBg = ctx.createLinearGradient(0, 0, 0, h);
-      gradBg.addColorStop(0, 'rgba(255,255,255,0.1)');
-      gradBg.addColorStop(1, 'rgba(255,255,255,0.02)');
-      ctx.fillStyle = gradBg;
-      ctx.fillRect(0, 0, w, h);
-
-      const maxY = Math.max(...sorted.map(r => r.atraso)) * 1.1 || 1;
-      const stepX = w / sorted.length;
-      sorted.forEach((r, i) => {
-        const x = i * stepX;
-        const barWidth = stepX * 0.7;
-        const barHeight = (r.atraso / maxY) * (h - 40);
-        const barGrad = ctx.createLinearGradient(0, h - 20 - barHeight, 0, h - 20);
-        barGrad.addColorStop(0, '#EF4444');
-        barGrad.addColorStop(1, '#DC2626');
-        ctx.shadowColor = '#EF4444';
-        ctx.shadowBlur = 8;
-        ctx.fillStyle = barGrad;
-        ctx.fillRect(x + stepX * 0.15, h - 20 - barHeight, barWidth, barHeight);
-        ctx.shadowBlur = 0;
-
-        // Valor no topo da barra
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.font = 'bold 11px -apple-system, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(r.atraso.toFixed(0), x + stepX / 2, h - 25 - barHeight);
-      });
-
-      // Labels de datas
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.font = 'bold 12px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      sorted.forEach((r, i) => {
-        const x = i * stepX;
-        ctx.fillText(r.data.slice(5,10), x + stepX / 2, h - 5);
-      });
-    }
-  }, [registros]);
-
-  // Observador de redimensionamento para gráficos responsivos
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver(() => {
-      drawCharts();
-    });
-    if (chartRef1.current) resizeObserver.observe(chartRef1.current);
-    if (chartRef2.current) resizeObserver.observe(chartRef2.current);
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [drawCharts]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900/50 to-pink-900/50 p-4 md:p-6 lg:p-8 backdrop-blur-sm">
-      {/* Header */}
-      <div className="text-center mb-12">
-        <h1 className="text-4xl md:text-5xl lg:text-6xl font-black bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent drop-shadow-2xl mb-4">
-          💰 Fechamento Mensal 📊
-        </h1>
-        <p className="text-xl text-white/80 font-light max-w-2xl mx-auto">
-          Registre os indicadores diários e acompanhe a evolução com gráficos interativos.
-        </p>
-      </div>
+    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-16">
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 bg-clip-text text-transparent mb-6 drop-shadow-2xl">
+            Fechamento Mensal
+          </h1>
+          <p className="text-xl md:text-2xl text-gray-700 max-w-3xl mx-auto leading-relaxed">
+            Gerencie registros diários, acompanhe KPIs e visualize evoluções com gráficos interativos.
+          </p>
+        </div>
 
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Formulário de Registro */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl transition-all duration-300">
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-6 flex items-center justify-center gap-3">
-            💼 Registrar Hoje
+        {/* Messages */}
+        {errorMsg && (
+          <div className="max-w-2xl mx-auto mb-8 p-6 bg-red-100/80 border-2 border-red-400/50 backdrop-blur-sm rounded-3xl shadow-2xl text-red-800 font-semibold text-lg text-center animate-pulse">
+            {errorMsg}
+          </div>
+        )}
+        {successMsg && (
+          <div className="max-w-2xl mx-auto mb-8 p-6 bg-emerald-100/80 border-2 border-emerald-400/50 backdrop-blur-sm rounded-3xl shadow-2xl text-emerald-800 font-semibold text-lg text-center animate-bounce">
+            {successMsg}
+          </div>
+        )}
+
+        {/* Form */}
+        <section className={`${glassClass} p-10 mb-16 max-w-4xl mx-auto shadow-3xl`}>
+          <h2 className="text-4xl font-bold text-gray-800 mb-10 flex items-center justify-center gap-4">
+            ➕ Adicionar Novo Registro Diário
           </h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-            <div className="md:col-span-3">
-              <label className="block text-white/90 font-semibold mb-3 text-lg flex items-center gap-2">
+          <form onSubmit={handleAddRecord} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div>
+              <label htmlFor="data" className={labelClass}>
                 📅 Data
               </label>
               <input
-                name="data"
+                id="data"
                 type="date"
-                value={form.data}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium placeholder-gray-300 focus:outline-none focus:border-blue-400/80 focus:ring-4 focus:ring-blue-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
-                required
+                value={formState.data}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, data: e.target.value }));
+                  clearFieldError('data');
+                }}
+                className={inputClass}
+                max={new Date().toISOString().split('T')[0]}
               />
+              {errors.data && <p className="text-red-500 text-sm mt-2 font-medium">{errors.data}</p>}
             </div>
             <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+              <label htmlFor="faturado" className={labelClass}>
                 💰 Faturado
               </label>
               <input
-                name="faturado"
+                id="faturado"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.faturado}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-green-400/80 focus:ring-4 focus:ring-green-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.faturado}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, faturado: Number(e.target.value) || 0 }));
+                  clearFieldError('faturado');
+                }}
+                className={inputClass}
               />
+              {errors.faturado && <p className="text-red-500 text-sm mt-2 font-medium">{errors.faturado}</p>}
             </div>
             <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+              <label htmlFor="atraso" className={labelClass}>
                 ⏰ Atraso
               </label>
               <input
-                name="atraso"
+                id="atraso"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.atraso}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-orange-400/80 focus:ring-4 focus:ring-orange-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.atraso}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, atraso: Number(e.target.value) || 0 }));
+                  clearFieldError('atraso');
+                }}
+                className={inputClass}
               />
+              {errors.atraso && <p className="text-red-500 text-sm mt-2 font-medium">{errors.atraso}</p>}
             </div>
             <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+              <label htmlFor="vendido" className={labelClass}>
                 🛒 Vendido
               </label>
               <input
-                name="vendido"
+                id="vendido"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.vendido}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-emerald-400/80 focus:ring-4 focus:ring-emerald-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.vendido}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, vendido: Number(e.target.value) || 0 }));
+                  clearFieldError('vendido');
+                }}
+                className={inputClass}
               />
+              {errors.vendido && <p className="text-red-500 text-sm mt-2 font-medium">{errors.vendido}</p>}
             </div>
             <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+              <label htmlFor="carteiraTotal" className={labelClass}>
                 💼 Carteira Total
               </label>
               <input
-                name="carteiraTotal"
+                id="carteiraTotal"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.carteiraTotal}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-purple-400/80 focus:ring-4 focus:ring-purple-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.carteiraTotal}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, carteiraTotal: Number(e.target.value) || 0 }));
+                  clearFieldError('carteiraTotal');
+                }}
+                className={inputClass}
               />
+              {errors.carteiraTotal && <p className="text-red-500 text-sm mt-2 font-medium">{errors.carteiraTotal}</p>}
             </div>
             <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+              <label htmlFor="previsaoMesAtual" className={labelClass}>
                 🔮 Previsão Mês Atual
               </label>
               <input
-                name="previsaoMesAtual"
+                id="previsaoMesAtual"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.previsaoMesAtual}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-indigo-400/80 focus:ring-4 focus:ring-indigo-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.previsaoMesAtual}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, previsaoMesAtual: Number(e.target.value) || 0 }));
+                  clearFieldError('previsaoMesAtual');
+                }}
+                className={inputClass}
               />
+              {errors.previsaoMesAtual && <p className="text-red-500 text-sm mt-2 font-medium">{errors.previsaoMesAtual}</p>}
             </div>
-            <div>
-              <label className="block text-white/90 font-semibold mb-3 flex items-center gap-2">
+            <div className="md:col-span-2 lg:col-span-1">
+              <label htmlFor="previsaoProxMes" className={labelClass}>
                 📈 Previsão Próximo Mês
               </label>
               <input
-                name="previsaoProxMes"
+                id="previsaoProxMes"
                 type="number"
-                min="0"
                 step="0.01"
-                value={form.previsaoProxMes}
-                onChange={handleInputChange}
-                className="w-full p-4 bg-white/20 border-2 border-white/30 rounded-2xl text-white text-lg font-medium focus:outline-none focus:border-pink-400/80 focus:ring-4 focus:ring-pink-500/30 transition-all duration-300 hover:bg-white/30 hover:border-white/50"
+                min="0"
+                value={formState.previsaoProxMes}
+                onChange={(e) => {
+                  setFormState((prev) => ({ ...prev, previsaoProxMes: Number(e.target.value) || 0 }));
+                  clearFieldError('previsaoProxMes');
+                }}
+                className={inputClass}
               />
+              {errors.previsaoProxMes && <p className="text-red-500 text-sm mt-2 font-medium">{errors.previsaoProxMes}</p>}
             </div>
-            <button
-              type="submit"
-              className="md:col-span-3 bg-gradient-to-r from-emerald-500 via-green-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white py-5 px-8 rounded-3xl font-black text-xl shadow-2xl hover:shadow-3xl hover:scale-105 active:scale-95 transition-all duration-300 mt-2 lg:mt-0"
-            >
-              ➕ Registrar Indicadores
-            </button>
+            <div className="md:col-span-2 lg:col-span-3">
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-bold py-4 px-12 rounded-3xl shadow-2xl hover:shadow-3xl transition-all duration-300 text-xl transform hover:scale-105 active:scale-95"
+              >
+                💾 Adicionar Registro
+              </button>
+            </div>
           </form>
+        </section>
 
-          {/* Erros de validação */}
-          {errors.length > 0 && (
-            <div className="mt-6 p-5 bg-red-500/20 border-2 border-red-400/50 rounded-2xl backdrop-blur-sm">
-              <ul className="list-disc pl-6 space-y-1 text-red-200 font-medium">
-                {errors.map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-              </ul>
+        {/* KPIs */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">💰</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.totalFaturado.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Total Faturado</p>
+          </div>
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">⏰</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.totalAtraso.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Total Atraso</p>
+          </div>
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">🛒</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.totalVendido.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Total Vendido</p>
+          </div>
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">💼</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.totalCarteira.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Carteira Total</p>
+          </div>
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">🔮</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.mediaPrevisaoMes.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Média Previsão Mês</p>
+          </div>
+          <div className={`${glassClass} p-8 text-center group cursor-pointer`}>
+            <span className="text-6xl lg:text-7xl mb-4 block group-hover:scale-110 transition-transform duration-300">📈</span>
+            <h3 className="text-4xl lg:text-5xl font-black text-gray-900 mb-2">
+              {metrics.mediaPrevisaoProxMes.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+            </h3>
+            <p className="text-lg text-gray-600 font-semibold tracking-wide">Média Próximo Mês</p>
+          </div>
+        </section>
+
+        {/* Charts */}
+        {chartData.length > 0 && (
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+            <div className={`${glassClass} p-8 shadow-3xl`}>
+              <h3 className="text-3xl font-bold text-gray-800 mb-8 text-center">📊 Evolução Faturado vs Vendido</h3>
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
+                  <XAxis dataKey="date" fontSize={14} />
+                  <YAxis fontSize={14} />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="faturado"
+                    stroke="#8884d8"
+                    strokeWidth={4}
+                    name="Faturado"
+                    dot={{ fill: '#8884d8', strokeWidth: 2 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="vendido"
+                    stroke="#82ca9d"
+                    strokeWidth={4}
+                    name="Vendido"
+                    dot={{ fill: '#82ca9d', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
-          )}
-        </div>
+            <div className={`${glassClass} p-8 shadow-3xl`}>
+              <h3 className="text-3xl font-bold text-gray-800 mb-8 text-center">📈 Comparação Atraso vs Previsão</h3>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
+                  <XAxis dataKey="date" fontSize={14} />
+                  <YAxis fontSize={14} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="atraso" fill="#ff7300" name="Atraso" barSize={30} />
+                  <Bar dataKey="previsao" fill="#8884d8" name="Previsão Mês" barSize={30} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        )}
 
-        {/* Cards de Totais */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="group bg-gradient-to-br from-blue-500/30 to-indigo-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">💰</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Faturado</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-cyan-300 to-blue-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.faturado.toLocaleString('pt-BR')}
-            </p>
+        {/* Table */}
+        <section className={`${glassClass} p-10 shadow-3xl overflow-hidden`}>
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-4">
+            <h2 className="text-4xl font-bold text-gray-800 flex items-center gap-4">
+              📋 Todos os Registros ({dailyRecords.length})
+            </h2>
+            {dailyRecords.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="px-8 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center gap-3 text-xl transform hover:scale-105 active:scale-95"
+              >
+                🗑️ Limpar Todos
+              </button>
+            )}
           </div>
-          <div className="group bg-gradient-to-br from-orange-500/30 to-red-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">⏰</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Atraso</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-orange-300 to-red-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.atraso.toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <div className="group bg-gradient-to-br from-emerald-500/30 to-green-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">🛒</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Vendido</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-emerald-300 to-green-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.vendido.toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <div className="group bg-gradient-to-br from-purple-500/30 to-violet-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">💼</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Carteira Total</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-purple-300 to-violet-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.carteiraTotal.toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <div className="group bg-gradient-to-br from-indigo-500/30 to-blue-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">🔮</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Previsão Mês Atual</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-300 to-blue-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.previsaoMesAtual.toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <div className="group bg-gradient-to-br from-pink-500/30 to-rose-600/30 backdrop-blur-xl border border-white/30 rounded-3xl p-6 md:p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 cursor-pointer hover:border-white/50">
-            <div className="text-4xl md:text-5xl mb-3 group-hover:scale-110 transition-transform">📈</div>
-            <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Previsão Próximo Mês</h3>
-            <p className="text-3xl md:text-4xl font-black bg-gradient-to-r from-pink-300 to-rose-300 bg-clip-text text-transparent drop-shadow-lg">
-              {totais.previsaoProxMes.toLocaleString('pt-BR')}
-            </p>
-          </div>
-        </div>
-
-        {/* Seção de Gráficos */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl">
-            <h3 className="text-2xl md:text-3xl font-bold text-white mb-6 flex items-center justify-center gap-3">
-              📊 Evolução Faturado vs Vendido
-            </h3>
-            <canvas
-              ref={chartRef1}
-              className="w-full h-48 md:h-56 rounded-2xl border border-white/20 bg-gradient-to-b from-transparent via-white/5 to-black/20 shadow-inner"
-            />
-          </div>
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl">
-            <h3 className="text-2xl md:text-3xl font-bold text-white mb-6 flex items-center justify-center gap-3">
-              📈 Atraso por Dia
-            </h3>
-            <canvas
-              ref={chartRef2}
-              className="w-full h-48 md:h-56 rounded-2xl border border-white/20 bg-gradient-to-b from-transparent via-white/5 to-black/20 shadow-inner"
-            />
-          </div>
-        </div>
-
-        {/* Tabela de Histórico */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-6 md:p-8 shadow-2xl overflow-hidden">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-            <h3 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-              📋 Histórico de Registros
-            </h3>
-            <button
-              onClick={handleClear}
-              className="bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-600 hover:to-orange-700 text-white px-6 py-3 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 whitespace-nowrap"
-              disabled={registros.length === 0}
-            >
-              🚫 Limpar Todos
-            </button>
-          </div>
-
-          {registros.length === 0 ? (
-            <div className="text-center py-12 text-white/70">
-              <div className="text-6xl mb-4">🎉</div>
-              <p className="text-xl md:text-2xl font-light">Nenhum registro ainda. Registre o primeiro indicador!</p>
+          {tableRecords.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-2xl text-gray-500 mb-4">📭 Nenhum registro encontrado</p>
+              <p className="text-lg text-gray-400">Adicione o primeiro registro usando o formulário acima!</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm md:text-base text-white/90">
+            <div className="overflow-x-auto rounded-2xl border border-white/50">
+              <table className="w-full table-auto">
                 <thead>
-                  <tr className="border-b-2 border-white/20 bg-white/10 backdrop-blur-sm sticky top-0">
-                    <th className="p-4 md:p-6 text-left font-black rounded-tl-xl">📅 Data</th>
-                    <th className="p-4 md:p-6 text-left font-black">💰 Faturado</th>
-                    <th className="p-4 md:p-6 text-left font-black">⏰ Atraso</th>
-                    <th className="p-4 md:p-6 text-left font-black">🛒 Vendido</th>
-                    <th className="p-4 md:p-6 text-left font-black">💼 Carteira</th>
-                    <th className="p-4 md:p-6 text-left font-black">🔮 Prev. Atual</th>
-                    <th className="p-4 md:p-6 text-left font-black rounded-tr-xl">📈 Prev. Próx.</th>
+                  <tr className="bg-white/50 backdrop-blur-sm">
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Data</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Faturado</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Atraso</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Vendido</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Carteira</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Prev. Mês</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Prev. Próx</th>
+                    <th className="px-6 py-5 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-24">Ações</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {registros.map((r, i) => (
-                    <tr key={r.data} className="hover:bg-white/20 transition-all duration-200 border-b border-white/10 last:border-b-0">
-                      <td className="p-4 md:p-6 font-mono font-bold text-blue-300">{r.data}</td>
-                      <td className="p-4 md:p-6 font-mono text-cyan-300">{r.faturado.toLocaleString('pt-BR')}</td>
-                      <td className="p-4 md:p-6 font-mono text-orange-300">{r.atraso.toLocaleString('pt-BR')}</td>
-                      <td className="p-4 md:p-6 font-mono text-emerald-300">{r.vendido.toLocaleString('pt-BR')}</td>
-                      <td className="p-4 md:p-6 font-mono text-purple-300">{r.carteiraTotal.toLocaleString('pt-BR')}</td>
-                      <td className="p-4 md:p-6 font-mono text-indigo-300">{r.previsaoMesAtual.toLocaleString('pt-BR')}</td>
-                      <td className="p-4 md:p-6 font-mono text-pink-300">{r.previsaoProxMes.toLocaleString('pt-BR')}</td>
+                <tbody className="divide-y divide-gray-200/50">
+                  {tableRecords.map((record) => (
+                    <tr key={record.data} className="hover:bg-white/30 transition-colors duration-200">
+                      <td className="px-6 py-5 whitespace-nowrap text-sm font-semibold text-gray-900">
+                        {new Date(record.data).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {record.faturado.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm font-medium text-orange-600">
+                        {record.atraso.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm font-medium text-emerald-600">
+                        {record.vendido.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm font-medium text-blue-600">
+                        {record.carteiraTotal.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm text-purple-600">
+                        {record.previsaoMesAtual.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-sm text-indigo-600">
+                        {record.previsaoProxMes.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleRemoveRecord(record.data)}
+                          className="px-4 py-2 bg-red-500/90 hover:bg-red-600 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105 active:scale-95 flex items-center justify-center gap-1 w-full sm:w-auto"
+                          title="Remover registro"
+                        >
+                          🗑️
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
 
