@@ -1,55 +1,61 @@
 "use client";
 
-import { ReactNode } from 'react';
+import { Inter } from 'next/font/google';
 import Link from 'next/link';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 export default function RootLayout({
   children,
 }: {
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
   return (
-    <html lang="pt" suppressHydrationWarning>
-      <body className="bg-gradient-radial from-slate-950 via-slate-900/50 to-indigo-950/20 min-h-screen antialiased overflow-x-hidden">
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-900/40 backdrop-blur-xl border-b border-white/10">
+    <html lang="pt-BR" className={`${inter.variable} font-sans`}>
+      <body className="h-screen flex flex-col bg-slate-950 overflow-hidden antialiased">
+        {/* Subtle radial gradient for depth */}
+        <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_70%_at_50%_50%,rgba(255,255,255,0.06)_0%,transparent_50%)]" />
+        
+        {/* Fixed Navbar with Glassmorphism */}
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-900/60 backdrop-blur-xl border-b border-white/5">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-[110px]">
-              <Link
-                href="/"
-                className="text-3xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent tracking-tight hover:scale-105 transition-transform duration-300"
-              >
-                Metalfama 🏭
-              </Link>
-              <ul className="flex items-center space-x-8">
-                <li>
-                  <Link
-                    href="/"
-                    className="group flex items-center gap-2 text-xl font-medium text-slate-300 hover:text-white hover:scale-105 hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:bg-white/10 rounded-xl px-3 py-2 transition-all duration-300 ease-in-out"
-                  >
-                    🏠 Visão Geral
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/diario"
-                    className="group flex items-center gap-2 text-xl font-medium text-slate-300 hover:text-white hover:scale-105 hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:bg-white/10 rounded-xl px-3 py-2 transition-all duration-300 ease-in-out"
-                  >
-                    📅 Diário
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/mensal"
-                    className="group flex items-center gap-2 text-xl font-medium text-slate-300 hover:text-white hover:scale-105 hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] hover:bg-white/10 rounded-xl px-3 py-2 transition-all duration-300 ease-in-out"
-                  >
-                    📊 Mensal
-                  </Link>
-                </li>
-              </ul>
+            <div className="flex items-center justify-between h-16">
+              {/* Logo */}
+              <div className="flex-shrink-0">
+                <h1 className="text-2xl font-black text-white tracking-tight">Metalfama 🏭</h1>
+              </div>
+              
+              {/* Navigation Links */}
+              <div className="flex items-center space-x-8">
+                <Link
+                  href="/"
+                  className="text-white/80 hover:text-white font-medium transition-colors duration-200 flex items-center gap-1 text-sm"
+                >
+                  🏠 Início
+                </Link>
+                <Link
+                  href="/diario"
+                  className="text-white/80 hover:text-white font-medium transition-colors duration-200 flex items-center gap-1 text-sm"
+                >
+                  📅 Diário
+                </Link>
+                <Link
+                  href="/mensal"
+                  className="text-white/80 hover:text-white font-medium transition-colors duration-200 flex items-center gap-1 text-sm"
+                >
+                  📊 Mensal
+                </Link>
+              </div>
             </div>
           </div>
         </nav>
-        <main className="pt-[110px] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        
+        {/* Scrollable Main Content */}
+        <main className="flex-1 pt-16 overflow-auto relative z-10">
           {children}
         </main>
       </body>
