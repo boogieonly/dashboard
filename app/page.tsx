@@ -1,81 +1,66 @@
 'use client';
 
-import Link from 'next/link';
+import React from 'react';
 
-export default function Page() {
+export default function HomePage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/10 to-slate-900 p-12 relative overflow-hidden">
-      {/* Background grid pattern */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:50px_50px] opacity-20" />
-      <div className="max-w-7xl mx-auto relative z-10">
-        <h1 className="text-6xl md:text-7xl font-black bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent mb-24 text-center drop-shadow-2xl animate-pulse">
-          Hub de Inteligência
-        </h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {/* Card 1: Diária */}
-          <div className="group h-96 bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl hover:shadow-[0_35px_60px_-15px_rgba(168,85,247,0.4),inset_0_0_20px_rgba(168,85,247,0.2)] hover:-translate-y-4 hover:rotate-1 transition-all duration-700 flex flex-col justify-between overflow-hidden relative">
-            <div>
-              <div className="text-7xl mb-8 [text-shadow:0_1px_0_#ccc,0_2px_0_#c9c9c9,0_3px_0_#bbb,0_4px_0_#bbb,0_5px_5px_5px_rgba(0,0,0,0.3)] drop-shadow-2xl group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-                🧠
-              </div>
-              <h2 className="text-3xl font-black text-white mb-6 drop-shadow-xl group-hover:text-purple-200 transition-colors duration-300">
-                Inteligência Diária
-              </h2>
-              <p className="text-xl text-slate-200 leading-relaxed drop-shadow-md">
-                Acesse análises diárias detalhadas com insights acionáveis derivados de dados em tempo real. Monitore métricas chave, receba alertas inteligentes e otimize suas decisões cotidianas com precisão.
-              </p>
-            </div>
-            <Link
-              href="/diario"
-              className="bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white px-10 py-4 rounded-2xl font-bold text-lg shadow-2xl hover:shadow-purple-500/50 hover:scale-110 hover:-translate-y-1 transition-all duration-300 self-start"
-            >
-              Explorar Diário →
-            </Link>
-          </div>
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/30 to-slate-900 flex flex-col items-center justify-center p-24 relative overflow-hidden">
+      {/* Subtle background particles */}
+      <div className="absolute inset-0 opacity-20">
+        <div className="absolute top-20 left-20 w-72 h-72 bg-blue-400/20 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
 
-          {/* Card 2: Mensal */}
-          <div className="group h-96 lg:col-span-1 bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl hover:shadow-[0_35px_60px_-15px_rgba(59,130,246,0.4),inset_0_0_20px_rgba(59,130,246,0.2)] hover:-translate-y-4 hover:-rotate-1 transition-all duration-700 flex flex-col justify-between overflow-hidden relative md:col-span-1">
-            <div>
-              <div className="text-7xl mb-8 [text-shadow:0_1px_0_#ccc,0_2px_0_#c9c9c9,0_3px_0_#bbb,0_4px_0_#bbb,0_5px_5px_5px_rgba(0,0,0,0.3)] drop-shadow-2xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
-                📊
-              </div>
-              <h2 className="text-3xl font-black text-white mb-6 drop-shadow-xl group-hover:text-blue-200 transition-colors duration-300">
-                Análises Mensais
-              </h2>
-              <p className="text-xl text-slate-200 leading-relaxed drop-shadow-md">
-                Visualize relatórios mensais abrangentes com tendências históricas, projeções e recomendações estratégicas baseadas em algoritmos avançados de machine learning.
-              </p>
-            </div>
-            <Link
-              href="/mensal"
-              className="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 text-white px-10 py-4 rounded-2xl font-bold text-lg shadow-2xl hover:shadow-blue-500/50 hover:scale-110 hover:-translate-y-1 transition-all duration-300 self-start"
-            >
-              Ver Mensal →
-            </Link>
-          </div>
+      {/* Banner */}
+      <h1 className="text-5xl md:text-7xl lg:text-8xl font-black bg-gradient-to-r from-white via-blue-200 to-blue-400 bg-clip-text text-transparent mb-20 drop-shadow-2xl animate-float z-10 relative">
+        🚀 Hub Comercial de Inteligência
+      </h1>
 
-          {/* Card 3: Estratégico */}
-          <div className="group h-96 md:col-span-1 lg:col-span-1 bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl hover:shadow-[0_35px_60px_-15px_rgba(34,197,94,0.4),inset_0_0_20px_rgba(34,197,94,0.2)] hover:-translate-y-4 hover:rotate-2 transition-all duration-700 flex flex-col justify-between overflow-hidden relative md:col-span-1 md:row-span-2">
-            <div>
-              <div className="text-7xl mb-8 [text-shadow:0_1px_0_#ccc,0_2px_0_#c9c9c9,0_3px_0_#bbb,0_4px_0_#bbb,0_5px_5px_5px_rgba(0,0,0,0.3)] drop-shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500">
-                🎯
-              </div>
-              <h2 className="text-3xl font-black text-white mb-6 drop-shadow-xl group-hover:text-emerald-200 transition-colors duration-300">
-                Estratégias Avançadas
-              </h2>
-              <p className="text-xl text-slate-200 leading-relaxed drop-shadow-md">
-                Desenvolva estratégias de longo prazo com simulações preditivas, análise de riscos e otimização de portfólios utilizando IA de vanguarda.
-              </p>
-            </div>
-            <Link
-              href="/estrategico"
-              className="bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-600 text-white px-10 py-4 rounded-2xl font-bold text-lg shadow-2xl hover:shadow-emerald-500/50 hover:scale-110 hover:-translate-y-1 transition-all duration-300 self-start"
-            >
-              Estratégias →
-            </Link>
-          </div>
+      {/* Grid of Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-12 max-w-7xl w-full z-10">
+        {/* Card 1 */}
+        <div className="group h-96 bg-white/5 backdrop-blur-3xl border border-white/20 rounded-3xl p-10 flex flex-col items-center justify-center text-center shadow-2xl hover:shadow-3xl hover:shadow-blue-500/50 hover:-translate-y-6 transition-all duration-700 cursor-pointer overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-t from-blue-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+          <div className="text-7xl mb-8 drop-shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 filter brightness-110">🤖</div>
+          <h2 className="text-3xl font-bold text-white mb-6 bg-gradient-to-r from-white to-blue-300 bg-clip-text text-transparent drop-shadow-lg relative z-10">AI Analytics</h2>
+          <p className="text-gray-300 text-lg mb-10 max-w-md leading-relaxed relative z-10">Unlock powerful insights with cutting-edge AI analytics.</p>
+          <button className="px-10 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-blue-400/50 transition-all duration-300 transform hover:scale-110 active:scale-105 relative z-10 border-2 border-white/30">
+            Explore →
+          </button>
+        </div>
+
+        {/* Card 2 */}
+        <div className="group h-96 bg-white/5 backdrop-blur-3xl border border-white/20 rounded-3xl p-10 flex flex-col items-center justify-center text-center shadow-2xl hover:shadow-3xl hover:shadow-green-500/50 hover:-translate-y-6 transition-all duration-700 cursor-pointer overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-t from-green-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+          <div className="text-7xl mb-8 drop-shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 filter brightness-110">📈</div>
+          <h2 className="text-3xl font-bold text-white mb-6 bg-gradient-to-r from-white to-green-300 bg-clip-text text-transparent drop-shadow-lg relative z-10">Predictive Sales</h2>
+          <p className="text-gray-300 text-lg mb-10 max-w-md leading-relaxed relative z-10">Forecast sales trends with precision using predictive models.</p>
+          <button className="px-10 py-4 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-green-400/50 transition-all duration-300 transform hover:scale-110 active:scale-105 relative z-10 border-2 border-white/30">
+            Dive In →
+          </button>
+        </div>
+
+        {/* Card 3 */}
+        <div className="group h-96 bg-white/5 backdrop-blur-3xl border border-white/20 rounded-3xl p-10 flex flex-col items-center justify-center text-center shadow-2xl hover:shadow-3xl hover:shadow-purple-500/50 hover:-translate-y-6 transition-all duration-700 cursor-pointer overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+          <div className="text-7xl mb-8 drop-shadow-2xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 filter brightness-110">👥</div>
+          <h2 className="text-3xl font-bold text-white mb-6 bg-gradient-to-r from-white to-purple-300 bg-clip-text text-transparent drop-shadow-lg relative z-10">Customer Insights</h2>
+          <p className="text-gray-300 text-lg mb-10 max-w-md leading-relaxed relative z-10">Deep dive into customer behavior and preferences.</p>
+          <button className="px-10 py-4 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:shadow-purple-400/50 transition-all duration-300 transform hover:scale-110 active:scale-105 relative z-10 border-2 border-white/30">
+            Discover →
+          </button>
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+      `}</style>
     </main>
   );
 }
