@@ -1,6 +1,10 @@
 "use client";
 
-import { GeistSans } from 'geist/font/sans';
+import { Inter } from 'next/font/google';
+import Link from 'next/link';
+import React from 'react';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export default function RootLayout({
   children,
@@ -8,41 +12,47 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning className={`${GeistSans.variable} font-sans`}>
-      <body className="h-screen flex flex-col bg-gradient-radial from-slate-950 via-indigo-950/10 via-purple-950/10 to-slate-950 overflow-hidden antialiased">
-        <nav className="flex items-center justify-between px-8 py-6 bg-slate-900/50 backdrop-blur-md border-b border-slate-800/50 sticky top-0 z-50 shrink-0">
-          <h1 className="text-white font-black text-3xl tracking-tight">Metalfama 🏭</h1>
-          <ul className="flex items-center space-x-8 list-none m-0 p-0">
-            <li>
-              <a
-                href="/"
-                className="group flex items-center gap-2 text-slate-200 font-medium text-lg hover:scale-105 hover:text-white transition-all duration-200 ease-in-out"
-              >
-                <span className="text-xl transition-transform group-hover:scale-110">🏠</span>
-                <span>Visão Geral</span>
-              </a>
-            </li>
-            <li>
-              <a
-                href="/diario"
-                className="group flex items-center gap-2 text-slate-200 font-medium text-lg hover:scale-105 hover:text-white transition-all duration-200 ease-in-out"
-              >
-                <span className="text-xl transition-transform group-hover:scale-110">📅</span>
-                <span>Diário</span>
-              </a>
-            </li>
-            <li>
-              <a
-                href="/mensal"
-                className="group flex items-center gap-2 text-slate-200 font-medium text-lg hover:scale-105 hover:text-white transition-all duration-200 ease-in-out"
-              >
-                <span className="text-xl transition-transform group-hover:scale-110">📊</span>
-                <span>Mensal</span>
-              </a>
-            </li>
-          </ul>
+    <html lang="pt" className={inter.className}>
+      <body className="bg-slate-950 min-h-screen overflow-x-hidden">
+        {/* Subtle radial gradient background in indigo tones */}
+        <div className="fixed inset-0 z-[-10] bg-[radial-gradient(circle_at_20%_80%,rgba(99,102,241,0.15),transparent_70%),radial-gradient(circle_at_80%_20%,rgba(139,92,246,0.15),transparent_70%)]" />
+        
+        {/* Fixed Glassmorphism Navbar */}
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-900/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <Link href="/" className="text-2xl font-extrabold text-white hover:text-indigo-300 transition-colors">
+                Metalfama 🏭
+              </Link>
+              <div className="flex items-center space-x-8">
+                <Link
+                  href="/"
+                  className="text-white/90 hover:text-indigo-400 transition-colors flex items-center space-x-2 font-medium"
+                >
+                  <span>🏠</span>
+                  <span>Visão Geral</span>
+                </Link>
+                <Link
+                  href="/daily"
+                  className="text-white/90 hover:text-indigo-400 transition-colors flex items-center space-x-2 font-medium"
+                >
+                  <span>📅</span>
+                  <span>Diário</span>
+                </Link>
+                <Link
+                  href="/monthly"
+                  className="text-white/90 hover:text-indigo-400 transition-colors flex items-center space-x-2 font-medium"
+                >
+                  <span>📊</span>
+                  <span>Mensal</span>
+                </Link>
+              </div>
+            </div>
+          </div>
         </nav>
-        <main className="flex-1 p-8 pt-24 overflow-auto">
+        
+        {/* Main content with top padding */}
+        <main className="pt-[100px] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {children}
         </main>
       </body>
