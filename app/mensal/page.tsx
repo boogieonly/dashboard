@@ -1,319 +1,248 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import * as XLSX from 'xlsx';
 
-type Material = 'Cobre' | 'Latão' | 'Alumínio';
-type QuotationStatus = 'Aberta' | 'Fechada' | 'Cancelada';
+type Status = 'pendente' | 'aprovado' | 'rejeitado';
 
-interface Sale {
-  id: string;
-  date: string; // YYYY-MM
-  material: Material;
-  client: string;
-  volumeKg: number;
-  revenue: number;
-  quotationStatus: QuotationStatus;
-}
-
-interface Filters {
-  monthYear: string;
+interface Record {
+  data: string;
   material: string;
-  client: string;
+  cliente: string;
+  peso: number;
+  valor: number;
+  status: Status;
 }
 
-const mockSales: Sale[] = [
-  { id: '1', date: '2024-10', material: 'Cobre', client: 'Cliente A', volumeKg: 1500, revenue: 75000, quotationStatus: 'Fechada' },
-  { id: '2', date: '2024-10', material: 'Latão', client: 'Cliente B', volumeKg: 800, revenue: 48000, quotationStatus: 'Aberta' },
-  { id: '3', date: '2024-10', material: 'Alumínio', client: 'Cliente A', volumeKg: 2000, revenue: 60000, quotationStatus: 'Fechada' },
-  { id: '4', date: '2024-11', material: 'Cobre', client: 'Cliente C', volumeKg: 1200, revenue: 60000, quotationStatus: 'Fechada' },
-  { id: '5', date: '2024-11', material: 'Latão', client: 'Cliente D', volumeKg: 900, revenue: 54000, quotationStatus: 'Cancelada' },
-  { id: '6', date: '2024-10', material: 'Alumínio', client: 'Cliente E', volumeKg: 1100, revenue: 33000, quotationStatus: 'Aberta' },
-  { id: '7', date: '2024-11', material: 'Cobre', client: 'Cliente B', volumeKg: 700, revenue: 35000, quotationStatus: 'Fechada' },
-];
-
-const COLORS = ['#FF6B35', '#FFD700', '#4682B4'];
-
-const MensalPage: React.FC = () => {
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [filters, setFilters] = useState<Filters>({ monthYear: '', material: 'Todos', client: 'Todos' });
-  const fileRef = useRef<HTMLInputElement>(null);
+export default function MensalPage() {
+  const [data, setData] = useState<Record[]>([]);
 
   useEffect(() => {
-    const data = localStorage.getItem('mensalData');
-    if (data) {
-      setSales(JSON.parse(data));
-    } else {
-      setSales(mockSales);
-      localStorage.setItem('mensalData', JSON.stringify(mockSales));
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('mensalData');
+      if (stored) {
+        setData(JSON.parse(stored));
+      } else {
+        const sampleData: Record[] = [
+          { data: '2024-10-01', material: 'Liga A', cliente: 'Cliente 1', peso: 150, valor: 1500, status: 'aprovado' },
+          { data: '2024-10-02', material: 'Liga B', cliente: 'Cliente 2', peso: 200, valor: 2200, status: 'pendente' },
+          { data: '2024-10-03', material: 'Liga A', cliente: 'Cliente 1', peso: 100, valor: 1000, status: 'aprovado' },
+          { data: '2024-10-04', material: 'Liga C', cliente: 'Cliente 3', peso: 180, valor: 1900, status: 'rejeitado' },
+          { data: '2024-10-05', material: 'Liga B', cliente: 'Cliente 4', peso: 120, valor: 1300, status: 'aprovado' },
+          { data: '2024-10-06', material: 'Liga A', cliente: 'Cliente 5', peso: 250, valor: 2600, status: 'pendente' },
+          { data: '2024-10-07', material: 'Liga D', cliente: 'Cliente 1', peso: 90, valor: 950, status: 'aprovado' },
+          { data: '2024-10-08', material: 'Liga C', cliente: 'Cliente 2', peso: 160, valor: 1700, status: 'aprovado' },
+          { data: '2024-10-09', material: 'Liga B', cliente: 'Cliente 3', peso: 210, valor: 2300, status: 'rejeitado' },
+          { data: '2024-10-10', material: 'Liga A', cliente: 'Cliente 4', peso: 140, valor: 1450, status: 'aprovado' },
+        ];
+        localStorage.setItem('mensalData', JSON.stringify(sampleData));
+        setData(sampleData);
+      }
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('mensalData', JSON.stringify(sales));
-  }, [sales]);
-
-  const filteredSales = useMemo(() => {
-    return sales.filter((sale) => {
-      if (filters.monthYear && sale.date !== filters.monthYear) return false;
-      if (filters.material !== 'Todos' && sale.material !== filters.material) return false;
-      if (filters.client !== 'Todos' && sale.client !== filters.client) return false;
-      return true;
-    });
-  }, [sales, filters]);
-
-  const uniqueClients = useMemo(() => {
-    return Array.from(new Set(sales.map((s) => s.client))).sort();
-  }, [sales]);
-
-  const totalVolume = useMemo(() => {
-    return filteredSales.reduce((sum, s) => sum + s.volumeKg, 0);
-  }, [filteredSales]);
-
-  const totalRevenue = useMemo(() => {
-    return filteredSales.reduce((sum, s) => sum + s.revenue, 0);
-  }, [filteredSales]);
-
-  const avgTicket = useMemo(() => {
-    return totalVolume > 0 ? totalRevenue / totalVolume : 0;
-  }, [totalVolume, totalRevenue]);
-
-  const openQuotes = useMemo(() => {
-    return filteredSales.filter((s) => s.quotationStatus === 'Aberta').length;
-  }, [filteredSales]);
-
-  const donutData = useMemo(() => {
-    const sums: Record<string, number> = {};
-    filteredSales.forEach((s) => {
-      sums[s.material] = (sums[s.material] || 0) + s.revenue;
-    });
-    return Object.entries(sums).map(([name, value]) => ({ name, value: Number(value) }));
-  }, [filteredSales]);
-
-  const topClientsData = useMemo(() => {
-    const sums: Record<string, number> = {};
-    filteredSales.forEach((s) => {
-      sums[s.client] = (sums[s.client] || 0) + s.revenue;
-    });
-    return Object.entries(sums)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([client, revenue]) => ({ client, revenue: Number(revenue) }));
-  }, [filteredSales]);
-
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result as string;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-
-      // Headers: ['Data', 'Material', 'Cliente', 'VolumeKg', 'Receita', 'Status']
-      const newSales: Sale[] = data.slice(1).map((row) => ({
-        id: crypto.randomUUID(),
-        date: row[0] as string,
-        material: row[1] as Material,
-        client: row[2] as string,
-        volumeKg: parseFloat(row[3] as string) || 0,
-        revenue: parseFloat(row[4] as string) || 0,
-        quotationStatus: row[5] as QuotationStatus,
-      }));
-
-      setSales((prev) => [...prev, ...newSales]);
-      e.target.value = '';
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const getMaterialColor = (material: Material) => {
-    switch (material) {
-      case 'Cobre': return 'bg-orange-100 text-orange-800';
-      case 'Latão': return 'bg-yellow-100 text-yellow-800';
-      case 'Alumínio': return 'bg-blue-100 text-blue-800';
+    if (typeof window !== 'undefined' && data.length > 0) {
+      localStorage.setItem('mensalData', JSON.stringify(data));
     }
+  }, [data]);
+
+  const volumeKg = data.reduce((sum, r) => sum + r.peso, 0);
+  const receita = data.reduce((sum, r) => sum + r.valor, 0);
+  const ticketMedio = data.length > 0 ? receita / data.length : 0;
+  const cotacoes = data.length;
+
+  const ligasMap = data.reduce((acc: Record<string, number>, r) => {
+    acc[r.material] = (acc[r.material] || 0) + r.peso;
+    return acc;
+  }, {});
+  const ligasData = Object.entries(ligasMap)
+    .map(([name, value]) => ({ name, value: Number(value) }))
+    .slice(0, 6);
+
+  const clientsMap = data.reduce((acc: Record<string, number>, r) => {
+    acc[r.cliente] = (acc[r.cliente] || 0) + r.peso;
+    return acc;
+  }, {});
+  const clientsData = Object.entries(clientsMap)
+    .map(([cliente, peso]) => ({ cliente, peso: Number(peso) }))
+    .sort((a, b) => b.peso - a.peso)
+    .slice(0, 5);
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+  const StatusBadge = ({ status }: { status: Status }) => {
+    const colorMap: Record<Status, string> = {
+      pendente: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+      aprovado: 'bg-green-100 text-green-800 border border-green-200',
+      rejeitado: 'bg-red-100 text-red-800 border border-red-200',
+    };
+    return (
+      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${colorMap[status]}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
   };
 
-  const getStatusColor = (status: QuotationStatus) => {
-    if (status === 'Aberta') return 'bg-red-100 text-red-800';
-    if (status === 'Cancelada') return 'bg-yellow-100 text-yellow-800';
-    return 'bg-green-100 text-green-800';
+  const exportExcel = () => {
+    const wsData = data.map((r) => ({
+      Data: r.data,
+      Material: r.material,
+      Cliente: r.cliente,
+      'Peso (Kg)': r.peso,
+      'Valor (R$)': r.valor,
+      Status: r.status,
+    }));
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mensal');
+    XLSX.writeFile(wb, `mensal-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
+
+  const tableData = [...data].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Banner */}
-        <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 text-white p-12 rounded-3xl shadow-2xl mb-12 text-center">
-          <h1 className="text-5xl md:text-6xl font-black tracking-tight drop-shadow-2xl">
-            📊 Inteligência Mensal de Mercado - Metalfama
-          </h1>
-          <p className="text-xl mt-4 opacity-90 font-semibold">Fechamento Mensal Profissional</p>
-        </div>
-
-        {/* Filters and Upload */}
-        <section className="bg-white/80 backdrop-blur-sm p-8 rounded-3xl shadow-xl mb-12">
-          <div className="flex flex-wrap items-end gap-6 mb-8">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Mês/Ano</label>
-              <input
-                type="month"
-                className="px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500 w-48"
-                value={filters.monthYear}
-                onChange={(e) => setFilters({ ...filters, monthYear: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Material</label>
-              <select
-                className="px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500 w-48"
-                value={filters.material}
-                onChange={(e) => setFilters({ ...filters, material: e.target.value })}
-              >
-                <option>Todos</option>
-                <option>Cobre</option>
-                <option>Latão</option>
-                <option>Alumínio</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Cliente</label>
-              <select
-                className="px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500 w-64"
-                value={filters.client}
-                onChange={(e) => setFilters({ ...filters, client: e.target.value })}
-              >
-                <option>Todos</option>
-                {uniqueClients.map((client) => (
-                  <option key={client}>{client}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-8 py-3 rounded-2xl hover:from-emerald-600 font-bold shadow-lg hover:shadow-xl transition-all"
-            >
-              📁 Upload Excel
-            </button>
-            <input ref={fileRef} type="file" accept=".xlsx" onChange={handleUpload} className="hidden" />
-          </div>
-        </section>
+        <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-12 text-center">
+          Relatório Mensal
+        </h1>
 
         {/* KPIs */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          <div className="bg-gradient-to-br from-orange-400 to-orange-600 text-white p-8 rounded-3xl shadow-2xl border-4 border-orange-200/50 backdrop-blur-sm">
-            <div className="text-5xl mb-4">⚖️</div>
-            <h3 className="text-xl font-bold mb-2">Volume Total Vendido</h3>
-            <p className="text-4xl font-black">{totalVolume.toLocaleString()} Kg</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
+            <div className="text-4xl md:text-5xl font-black text-blue-600 mb-2">
+              {volumeKg.toLocaleString()}
+            </div>
+            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Volume Kg</p>
           </div>
-          <div className="bg-gradient-to-br from-emerald-400 to-green-600 text-white p-8 rounded-3xl shadow-2xl border-4 border-emerald-200/50 backdrop-blur-sm">
-            <div className="text-5xl mb-4">💰</div>
-            <h3 className="text-xl font-bold mb-2">Receita Bruta</h3>
-            <p className="text-4xl font-black">R$ {totalRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
+            <div className="text-4xl md:text-5xl font-black text-green-600 mb-2">
+              {formatCurrency(receita)}
+            </div>
+            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Receita R$</p>
           </div>
-          <div className="bg-gradient-to-br from-purple-400 to-violet-600 text-white p-8 rounded-3xl shadow-2xl border-4 border-purple-200/50 backdrop-blur-sm">
-            <div className="text-5xl mb-4">📈</div>
-            <h3 className="text-xl font-bold mb-2">Ticket Médio por Kg</h3>
-            <p className="text-4xl font-black">R$ {avgTicket.toFixed(2)}</p>
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
+            <div className="text-4xl md:text-5xl font-black text-purple-600 mb-2">
+              {formatCurrency(ticketMedio)}
+            </div>
+            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Ticket Médio</p>
           </div>
-          <div className="bg-gradient-to-br from-red-400 to-rose-600 text-white p-8 rounded-3xl shadow-2xl border-4 border-red-200/50 backdrop-blur-sm">
-            <div className="text-5xl mb-4">📝</div>
-            <h3 className="text-xl font-bold mb-2">Cotações em Aberto</h3>
-            <p className="text-4xl font-black">{openQuotes}</p>
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
+            <div className="text-4xl md:text-5xl font-black text-orange-600 mb-2">
+              {cotacoes.toLocaleString()}
+            </div>
+            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Cotações</p>
           </div>
-        </section>
+        </div>
 
         {/* Charts */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-          <div className="bg-white/80 backdrop-blur-sm p-8 rounded-3xl shadow-xl">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Distribuição por Liga (Receita)</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50">
+            <h3 className="text-3xl font-bold text-gray-900 mb-8 text-center">Distribuição de Ligas (Volume Kg)</h3>
             <ResponsiveContainer width="100%" height={400}>
               <PieChart>
                 <Pie
-                  data={donutData}
+                  data={ligasData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
                   cy="50%"
                   outerRadius={100}
-                  innerRadius={60}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
-                  {donutData.map((entry, index) => (
+                  {ligasData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="bg-white/80 backdrop-blur-sm p-8 rounded-3xl shadow-xl">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Top 10 Clientes por Faturamento</h2>
+          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50">
+            <h3 className="text-3xl font-bold text-gray-900 mb-8 text-center">Top Clientes (Volume Kg)</h3>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart layout="vertical" data={topClientsData}>
+              <BarChart data={clientsData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis type="number" />
-                <YAxis dataKey="client" type="category" width={200} />
-                <Tooltip formatter={(value) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Faturamento']} />
-                <Bar dataKey="revenue" fill="#8884d8" />
+                <XAxis dataKey="cliente" angle={-45} height={80} textAnchor="end" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="peso" fill="#8884d8" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </section>
+        </div>
 
         {/* Table */}
-        <section className="bg-white/80 backdrop-blur-sm p-8 rounded-3xl shadow-xl">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6">Tabela de Inteligência</h2>
-          {filteredSales.length === 0 ? (
-            <div className="text-center py-16">
-              <p className="text-2xl text-gray-500 mb-4">📭 Nenhum dado encontrado</p>
-              <p className="text-gray-400">Faça upload de um arquivo Excel ou ajuste os filtros.</p>
+        <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl border border-white/50 overflow-hidden">
+          <div className="p-8 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <h3 className="text-3xl font-bold text-gray-900">Registros Detalhados</h3>
+              <button
+                onClick={exportExcel}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-3 rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl transform hover:-translate-y-0.5"
+              >
+                📊 Exportar Excel
+              </button>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Data</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Material</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Cliente</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Volume (Kg)</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Receita (R$)</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full divide-y divide-gray-200">
+              <thead className="bg-gradient-to-r from-gray-100 to-gray-200">
+                <tr>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Data</th>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Material</th>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Cliente</th>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Peso (Kg)</th>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Valor (R$)</th>
+                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {tableData.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-blue-50 transition-all duration-200">
+                    <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {row.data}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
+                      {row.material}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900">
+                      {row.cliente}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
+                      {row.peso.toLocaleString()}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
+                      {formatCurrency(row.valor)}
+                    </td>
+                    <td className="px-8 py-6 whitespace-nowrap text-sm">
+                      <StatusBadge status={row.status} />
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredSales.map((sale) => (
-                    <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{sale.date}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getMaterialColor(sale.material)}`}>
-                          {sale.material}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{sale.client}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{sale.volumeKg.toLocaleString()}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        R$ {sale.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(sale.quotationStatus)}`}>
-                          {sale.quotationStatus}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
-};
-
-export default MensalPage;
+}
