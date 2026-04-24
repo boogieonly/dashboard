@@ -1,154 +1,60 @@
 "use client";
 
-import { useCallback, useState } from 'react';
+import React from 'react';
 
-export default function Home() {
-  const [dragActive, setDragActive] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+type CardData = {
+  title: string;
+  desc: string;
+};
 
-  const fileInputId = 'excel-upload';
+const cards: CardData[] = [
+  {
+    title: "Visão Geral",
+    desc: "Indicadores de performance global",
+  },
+  {
+    title: "Diário",
+    desc: "Faturamento, vendas e atrasos diários",
+  },
+  {
+    title: "Mensal",
+    desc: "Leads, principais clientes e cotações",
+  },
+];
 
-  const handleDrag = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]?.name.endsWith('.xlsx')) {
-      setFile(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]?.name.endsWith('.xlsx')) {
-      setFile(e.target.files[0]);
-    }
-  };
-
-  const glassClass = 'bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl';
-  const inputClass = 'flex-1 min-w-[140px] bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/30 backdrop-blur-sm transition-all';
-
+function Card({ title, desc }: CardData) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900/50 to-indigo-900 overflow-x-hidden">
-      {/* Banner Superior */}
-      <div className="text-center py-16 px-8">
-        <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent mb-6 drop-shadow-2xl">
-          Dashboard Comercial
-        </h1>
-        <p className="text-xl md:text-2xl text-white/80 font-medium max-w-2xl mx-auto">
-          Análise completa de vendas, performance e oportunidades de negócio.
+    <div className="group relative bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 h-80 flex flex-col justify-between shadow-2xl hover:-translate-y-4 hover:shadow-2xl hover:shadow-blue-500/25 hover:border-white/20 transition-all duration-500 cursor-pointer overflow-hidden">
+      <div>
+        <h3 className="text-3xl font-black text-white mb-6 group-hover:text-blue-400 transition-all duration-300 drop-shadow-lg">
+          {title}
+        </h3>
+        <p className="text-gray-300 text-xl leading-relaxed group-hover:text-gray-200 transition-colors duration-300">
+          {desc}
         </p>
       </div>
-
-      <div className="max-w-7xl mx-auto px-6 space-y-12 pb-16">
-        {/* Seção de Upload */}
-        <div className="max-w-4xl mx-auto">
-          <div className={glassClass}>
-            <div
-              className={`border-4 border-dashed rounded-2xl p-16 text-center transition-all duration-300 cursor-pointer ${
-                dragActive
-                  ? 'border-blue-400 bg-blue-500/20 scale-[1.02]'
-                  : 'border-white/30 hover:border-white/50'
-              }`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <input
-                id={fileInputId}
-                type="file"
-                accept=".xlsx"
-                onChange={handleChange}
-                className="hidden"
-              />
-              <label htmlFor={fileInputId} className="block">
-                <div className="text-6xl mb-6">📊</div>
-                <p className="text-2xl font-semibold text-white mb-2">
-                  Arraste seu arquivo Excel aqui
-                </p>
-                <p className="text-lg text-white/70 mb-4">ou clique para selecionar workbook_v1.xlsx</p>
-                {file && (
-                  <div className="bg-green-500/20 border border-green-400/50 rounded-xl p-4 mt-6">
-                    <p className="font-medium text-green-300">✅ Arquivo carregado:</p>
-                    <p className="text-green-200">{file.name}</p>
-                  </div>
-                )}
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Filtros */}
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-8 text-center">Filtros</h2>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <input placeholder="Período" className={inputClass} />
-            <input placeholder="Região" className={inputClass} />
-            <input placeholder="Produto" className={inputClass} />
-            <input placeholder="Vendedor" className={inputClass} />
-            <input placeholder="Material" className={inputClass} />
-          </div>
-        </div>
-
-        {/* KPIs */}
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-8 text-center">Indicadores Principais</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className={`${glassClass} text-center hover:scale-[1.02] transition-transform`}>
-              <div className="text-4xl font-black text-blue-400 mb-2">12.345</div>
-              <div className="text-white/90 font-semibold text-lg">Volume Total (kg)</div>
-            </div>
-            <div className={`${glassClass} text-center hover:scale-[1.02] transition-transform`}>
-              <div className="text-4xl font-black text-green-400 mb-2">R$ 1.234.567</div>
-              <div className="text-white/90 font-semibold text-lg">Valor Total (R$)</div>
-            </div>
-            <div className={`${glassClass} text-center hover:scale-[1.02] transition-transform`}>
-              <div className="text-4xl font-black text-yellow-400 mb-2">112%</div>
-              <div className="text-white/90 font-semibold text-lg">Atingimento de Meta</div>
-            </div>
-            <div className={`${glassClass} text-center hover:scale-[1.02] transition-transform`}>
-              <div className="text-4xl font-black text-purple-400 mb-2">47</div>
-              <div className="text-white/90 font-semibold text-lg">Oportunidades</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Seção Materiais */}
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-8 text-center">Materiais</h2>
-          <div className="flex gap-6 overflow-x-auto pb-6 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent">
-            <div className={`${glassClass} min-w-[220px] flex-shrink-0 hover:scale-[1.05] transition-all snap-center text-center p-6`}>
-              <div className="text-4xl mb-4">🟤</div>
-              <h3 className="text-xl font-bold text-white mb-2">Cobre</h3>
-              <p className="text-white/70">Volume: 5.678 kg</p>
-            </div>
-            <div className={`${glassClass} min-w-[220px] flex-shrink-0 hover:scale-[1.05] transition-all snap-center text-center p-6`}>
-              <div className="text-4xl mb-4">🟡</div>
-              <h3 className="text-xl font-bold text-white mb-2">Latão</h3>
-              <p className="text-white/70">Volume: 3.245 kg</p>
-            </div>
-            <div className={`${glassClass} min-w-[220px] flex-shrink-0 hover:scale-[1.05] transition-all snap-center text-center p-6`}>
-              <div className="text-4xl mb-4">⚪</div>
-              <h3 className="text-xl font-bold text-white mb-2">Alumínio</h3>
-              <p className="text-white/70">Volume: 8.912 kg</p>
-            </div>
-            <div className={`${glassClass} min-w-[220px] flex-shrink-0 hover:scale-[1.05] transition-all snap-center text-center p-6`}>
-              <div className="text-4xl mb-4">🔩</div>
-              <h3 className="text-xl font-bold text-white mb-2">Inox</h3>
-              <p className="text-white/70">Volume: 2.134 kg</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <button className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-lg hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 w-full group-hover:scale-105 mt-4">
+        Acessar Painel
+      </button>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900/30 to-slate-900 flex flex-col items-center justify-center p-8 sm:p-12 lg:p-24 text-white relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent" />
+      <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black bg-gradient-to-r from-white via-blue-200 to-blue-400 bg-clip-text text-transparent mb-8 lg:mb-12 z-10 drop-shadow-2xl animate-pulse">
+        🚀 Hub Comercial Metalfama
+      </h1>
+      <p className="text-lg sm:text-xl lg:text-2xl text-center max-w-2xl mx-auto text-gray-300 font-light mb-16 lg:mb-24 leading-relaxed z-10 px-4">
+        Bem-vindo ao painel de gestão comercial da Metalfama. Monitore e otimize suas operações com insights em tempo real e dashboards intuitivos.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-6xl w-full z-10">
+        {cards.map((card, index) => (
+          <Card key={index} {...card} />
+        ))}
+      </div>
+    </main>
   );
 }
