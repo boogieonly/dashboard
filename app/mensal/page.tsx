@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   PieChart,
   Pie,
@@ -12,229 +12,238 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
+  Legend
 } from 'recharts';
-import * as XLSX from 'xlsx';
 
-type Status = 'pendente' | 'aprovado' | 'rejeitado';
+type Status = 'PREMIUM' | 'REGULAR' | 'BASIC';
 
-interface Record {
-  data: string;
-  material: string;
+interface VendaRecord {
+  id: number;
   cliente: string;
-  peso: number;
-  valor: number;
+  liga: string;
+  volumeKg: number;
+  receita: number;
+  ticketMedio: number;
+  cotacao: number;
   status: Status;
 }
 
 export default function MensalPage() {
-  const [data, setData] = useState<Record[]>([]);
+  const [vendas, setVendas] = useState<VendaRecord[]>([]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('mensalData');
-      if (stored) {
-        setData(JSON.parse(stored));
-      } else {
-        const sampleData: Record[] = [
-          { data: '2024-10-01', material: 'Liga A', cliente: 'Cliente 1', peso: 150, valor: 1500, status: 'aprovado' },
-          { data: '2024-10-02', material: 'Liga B', cliente: 'Cliente 2', peso: 200, valor: 2200, status: 'pendente' },
-          { data: '2024-10-03', material: 'Liga A', cliente: 'Cliente 1', peso: 100, valor: 1000, status: 'aprovado' },
-          { data: '2024-10-04', material: 'Liga C', cliente: 'Cliente 3', peso: 180, valor: 1900, status: 'rejeitado' },
-          { data: '2024-10-05', material: 'Liga B', cliente: 'Cliente 4', peso: 120, valor: 1300, status: 'aprovado' },
-          { data: '2024-10-06', material: 'Liga A', cliente: 'Cliente 5', peso: 250, valor: 2600, status: 'pendente' },
-          { data: '2024-10-07', material: 'Liga D', cliente: 'Cliente 1', peso: 90, valor: 950, status: 'aprovado' },
-          { data: '2024-10-08', material: 'Liga C', cliente: 'Cliente 2', peso: 160, valor: 1700, status: 'aprovado' },
-          { data: '2024-10-09', material: 'Liga B', cliente: 'Cliente 3', peso: 210, valor: 2300, status: 'rejeitado' },
-          { data: '2024-10-10', material: 'Liga A', cliente: 'Cliente 4', peso: 140, valor: 1450, status: 'aprovado' },
-        ];
-        localStorage.setItem('mensalData', JSON.stringify(sampleData));
-        setData(sampleData);
-      }
-    }
+    const mockData: VendaRecord[] = [
+      { id: 1, cliente: 'Indústria X', liga: 'Liga Ouro', volumeKg: 250, receita: 45000, ticketMedio: 180, cotacao: 8, status: 'PREMIUM' },
+      { id: 2, cliente: 'Fábrica Y', liga: 'Liga Prata', volumeKg: 180, receita: 32000, ticketMedio: 177.78, cotacao: 6, status: 'REGULAR' },
+      { id: 3, cliente: 'Indústria X', liga: 'Liga Bronze', volumeKg: 120, receita: 21000, ticketMedio: 175, cotacao: 4, status: 'PREMIUM' },
+      { id: 4, cliente: 'Cliente Z', liga: 'Liga Ouro', volumeKg: 300, receita: 52000, ticketMedio: 173.33, cotacao: 10, status: 'PREMIUM' },
+      { id: 5, cliente: 'Fábrica Y', liga: 'Liga Prata', volumeKg: 200, receita: 35000, ticketMedio: 175, cotacao: 7, status: 'REGULAR' },
+      { id: 6, cliente: 'Empresa W', liga: 'Liga Bronze', volumeKg: 150, receita: 26000, ticketMedio: 173.33, cotacao: 5, status: 'BASIC' },
+      { id: 7, cliente: 'Cliente Z', liga: 'Liga Ouro', volumeKg: 220, receita: 38000, ticketMedio: 172.73, cotacao: 9, status: 'PREMIUM' },
+      { id: 8, cliente: 'Empresa W', liga: 'Liga Prata', volumeKg: 160, receita: 28000, ticketMedio: 175, cotacao: 6, status: 'REGULAR' },
+      { id: 9, cliente: 'Indústria X', liga: 'Liga Bronze', volumeKg: 140, receita: 24000, ticketMedio: 171.43, cotacao: 5, status: 'PREMIUM' },
+      { id: 10, cliente: 'Fábrica Y', liga: 'Liga Ouro', volumeKg: 280, receita: 48000, ticketMedio: 171.43, cotacao: 8, status: 'REGULAR' }
+    ];
+    setVendas(mockData);
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && data.length > 0) {
-      localStorage.setItem('mensalData', JSON.stringify(data));
-    }
-  }, [data]);
+  const volumeTotal = useMemo(
+    () => vendas.reduce((sum, v) => sum + v.volumeKg, 0),
+    [vendas]
+  );
 
-  const volumeKg = data.reduce((sum, r) => sum + r.peso, 0);
-  const receita = data.reduce((sum, r) => sum + r.valor, 0);
-  const ticketMedio = data.length > 0 ? receita / data.length : 0;
-  const cotacoes = data.length;
+  const receitaTotal = useMemo(
+    () => vendas.reduce((sum, v) => sum + v.receita, 0),
+    [vendas]
+  );
 
-  const ligasMap = data.reduce((acc: Record<string, number>, r) => {
-    acc[r.material] = (acc[r.material] || 0) + r.peso;
-    return acc;
-  }, {});
-  const ligasData = Object.entries(ligasMap)
-    .map(([name, value]) => ({ name, value: Number(value) }))
-    .slice(0, 6);
+  const ticketMedioGlobal = useMemo(
+    () => (vendas.length > 0 ? receitaTotal / vendas.length : 0),
+    [vendas, receitaTotal]
+  );
 
-  const clientsMap = data.reduce((acc: Record<string, number>, r) => {
-    acc[r.cliente] = (acc[r.cliente] || 0) + r.peso;
-    return acc;
-  }, {});
-  const clientsData = Object.entries(clientsMap)
-    .map(([cliente, peso]) => ({ cliente, peso: Number(peso) }))
-    .sort((a, b) => b.peso - a.peso)
-    .slice(0, 5);
+  const totalCotações = useMemo(
+    () => vendas.reduce((sum, v) => sum + v.cotacao, 0),
+    [vendas]
+  );
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-
-  const StatusBadge = ({ status }: { status: Status }) => {
-    const colorMap: Record<Status, string> = {
-      pendente: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-      aprovado: 'bg-green-100 text-green-800 border border-green-200',
-      rejeitado: 'bg-red-100 text-red-800 border border-red-200',
-    };
-    return (
-      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium border ${colorMap[status]}`}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
-
-  const exportExcel = () => {
-    const wsData = data.map((r) => ({
-      Data: r.data,
-      Material: r.material,
-      Cliente: r.cliente,
-      'Peso (Kg)': r.peso,
-      'Valor (R$)': r.valor,
-      Status: r.status,
+  const ligaData = useMemo(() => {
+    const grouped: { [key: string]: number } = {};
+    vendas.forEach((v) => {
+      grouped[v.liga] = (grouped[v.liga] || 0) + v.volumeKg;
+    });
+    return Object.entries(grouped).map(([name, value]) => ({
+      name,
+      value: Number(value),
     }));
-    const ws = XLSX.utils.json_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Mensal');
-    XLSX.writeFile(wb, `mensal-${new Date().toISOString().split('T')[0]}.xlsx`);
-  };
+  }, [vendas]);
 
-  const tableData = [...data].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  const clientData = useMemo(() => {
+    const grouped: { [key: string]: number } = {};
+    vendas.forEach((v) => {
+      grouped[v.cliente] = (grouped[v.cliente] || 0) + v.receita;
+    });
+    return Object.entries(grouped)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([name, receita]) => ({ name, receita: Number(receita) }));
+  }, [vendas]);
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#FF6384'];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-12 text-center">
-          Relatório Mensal
-        </h1>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 overflow-hidden relative">
+      <div className="container mx-auto px-6 py-16 md:px-12 lg:px-24">
+        {/* Header */}
+        <div className="text-center mb-20">
+          <h1 className="text-5xl md:text-7xl font-black bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent drop-shadow-2xl leading-tight">
+            Fechamento Mensal
+          </h1>
+        </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl md:text-5xl font-black text-blue-600 mb-2">
-              {volumeKg.toLocaleString()}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
+          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="relative">
+              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Volume Kg</p>
+              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
+                {volumeTotal.toLocaleString()}
+              </p>
+              <p className="text-white/50 text-sm mt-2">kg</p>
             </div>
-            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Volume Kg</p>
           </div>
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl md:text-5xl font-black text-green-600 mb-2">
-              {formatCurrency(receita)}
+          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="relative">
+              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Receita</p>
+              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
+                {receitaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
             </div>
-            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Receita R$</p>
           </div>
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl md:text-5xl font-black text-purple-600 mb-2">
-              {formatCurrency(ticketMedio)}
+          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="relative">
+              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Ticket Médio</p>
+              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
+                {ticketMedioGlobal.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                  minimumFractionDigits: 2,
+                })}
+              </p>
             </div>
-            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Ticket Médio</p>
           </div>
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300">
-            <div className="text-4xl md:text-5xl font-black text-orange-600 mb-2">
-              {cotacoes.toLocaleString()}
+          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="relative">
+              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Cotações</p>
+              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
+                {totalCotações.toLocaleString()}
+              </p>
             </div>
-            <p className="text-sm font-semibold text-gray-600 uppercase tracking-widest">Cotações</p>
           </div>
         </div>
 
         {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50">
-            <h3 className="text-3xl font-bold text-gray-900 mb-8 text-center">Distribuição de Ligas (Volume Kg)</h3>
-            <ResponsiveContainer width="100%" height={400}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
+          {/* Donut Chart - Ligas */}
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <h3 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">Distribuição por Ligas</h3>
+            <ResponsiveContainer width="100%" height={350}>
               <PieChart>
                 <Pie
-                  data={ligasData}
+                  data={ligaData}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
                   cy="50%"
-                  outerRadius={100}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={90}
+                  innerRadius={60}
                 >
-                  {ligasData.map((entry, index) => (
+                  {ligaData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
+                <Legend wrapperStyle={{ color: 'white', fontSize: 14 }} verticalAlign="middle" align="right" />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl p-8 border border-white/50">
-            <h3 className="text-3xl font-bold text-gray-900 mb-8 text-center">Top Clientes (Volume Kg)</h3>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={clientsData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="cliente" angle={-45} height={80} textAnchor="end" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="peso" fill="#8884d8" radius={[4, 4, 0, 0]} />
+
+          {/* Bar Chart - Clientes */}
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <h3 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">Top Clientes por Receita</h3>
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={clientData}>
+                <defs>
+                  <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#667eea" stopOpacity={0.8} />
+                    <stop offset="100%" stopColor="#764ba2" stopOpacity={0.8} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                  unit=" R$"
+                />
+                <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Receita']} />
+                <Bar dataKey="receita" fill="url(#colorReceita)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white/90 backdrop-blur-sm shadow-2xl rounded-3xl border border-white/50 overflow-hidden">
-          <div className="p-8 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-3xl font-bold text-gray-900">Registros Detalhados</h3>
-              <button
-                onClick={exportExcel}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-3 rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 font-semibold shadow-xl hover:shadow-2xl transform hover:-translate-y-0.5"
-              >
-                📊 Exportar Excel
-              </button>
-            </div>
-          </div>
+        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-hidden">
+          <h3 className="text-2xl md:text-3xl font-bold text-white mb-8">Vendas Detalhadas</h3>
           <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-gray-100 to-gray-200">
-                <tr>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Data</th>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Material</th>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Cliente</th>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Peso (Kg)</th>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Valor (R$)</th>
-                  <th className="px-8 py-6 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Status</th>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/20">
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Cliente</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Liga</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Volume Kg</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Receita</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Ticket Médio</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Cotações</th>
+                  <th className="text-left py-4 px-6 font-semibold text-white/90">Status</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {tableData.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-blue-50 transition-all duration-200">
-                    <td className="px-8 py-6 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {row.data}
+              <tbody>
+                {vendas.map((venda) => (
+                  <tr key={venda.id} className="border-b border-white/10 hover:bg-white/5 transition-colors duration-200">
+                    <td className="py-4 px-6 font-medium text-white">{venda.cliente}</td>
+                    <td className="py-4 px-6 text-white/80">{venda.liga}</td>
+                    <td className="py-4 px-6 text-white/80">{venda.volumeKg.toLocaleString()} kg</td>
+                    <td className="py-4 px-6 text-white/80">
+                      R$ {venda.receita.toLocaleString('pt-BR')}
                     </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
-                      {row.material}
+                    <td className="py-4 px-6 text-white/80">
+                      R$ {venda.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900">
-                      {row.cliente}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
-                      {row.peso.toLocaleString()}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
-                      {formatCurrency(row.valor)}
-                    </td>
-                    <td className="px-8 py-6 whitespace-nowrap text-sm">
-                      <StatusBadge status={row.status} />
+                    <td className="py-4 px-6 text-white/80">{venda.cotacao.toLocaleString()}</td>
+                    <td className="py-4 px-6">
+                      <span
+                        className={`px-4 py-2 rounded-full text-xs font-bold border-2 shadow-lg ${
+                          venda.status === 'PREMIUM'
+                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-400/50'
+                            : venda.status === 'REGULAR'
+                            ? 'bg-blue-500/20 text-blue-400 border-blue-400/50'
+                            : 'bg-gray-500/20 text-gray-400 border-gray-400/50'
+                        }`}
+                      >
+                        {venda.status}
+                      </span>
                     </td>
                   </tr>
                 ))}
