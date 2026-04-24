@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
 import { Inter } from 'next/font/google';
 import Link from 'next/link';
-import React from 'react';
+import { usePathname } from 'next/navigation';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -11,54 +11,60 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+
   return (
-    <html lang="pt" className={inter.className}>
-      <body className="bg-slate-950 font-sans antialiased overflow-x-hidden">
-        {/* Static mesh gradient bubbles for background depth */}
+    <html lang="pt-BR" className={inter.className}>
+      <body className="bg-slate-950 min-h-screen overflow-x-hidden antialiased">
+        {/* Mesh Gradient Bubbles Background */}
         <div className="fixed inset-0 pointer-events-none z-0">
-          <div className="absolute -top-32 -left-32 w-96 h-96 bg-gradient-to-br from-indigo-400/10 via-purple-500/15 to-violet-600/20 rounded-full blur-3xl" />
-          <div className="absolute top-1/4 right-1/4 w-72 h-72 bg-gradient-to-tr from-purple-500/20 to-indigo-600/25 rounded-full blur-2xl opacity-80" />
-          <div className="absolute bottom-1/3 left-1/4 w-80 h-80 bg-gradient-to-r from-indigo-500/15 to-purple-400/20 rounded-full blur-xl" />
-          <div className="absolute bottom-1/2 right-1/3 w-64 h-64 bg-gradient-to-bl from-violet-600/25 to-indigo-400/10 rounded-full blur-2xl" />
+          <div className="absolute top-[10%] left-[10%] w-80 h-80 bg-gradient-to-br from-violet-500/25 via-indigo-400/20 to-cyan-400/25 rounded-full blur-3xl animate-[pulse_12s_cubic-bezier(0.4,0,0.6,1)_infinite]" />
+          <div className="absolute top-[20%] right-[15%] w-72 h-72 bg-gradient-to-br from-pink-500/20 via-purple-400/25 to-blue-400/20 rounded-full blur-3xl animate-[pulse_16s_cubic-bezier(0.4,0,0.6,1)_infinite] [animation-delay:4s]" />
+          <div className="absolute bottom-[25%] left-[60%] w-96 h-96 bg-gradient-to-br from-emerald-500/15 via-teal-400/25 to-sky-400/20 rounded-full blur-3xl animate-[pulse_14s_cubic-bezier(0.4,0,0.6,1)_infinite] [animation-delay:8s]" />
+          <div className="absolute top-[70%] right-[25%] w-64 h-64 bg-gradient-to-br from-orange-500/20 via-rose-400/25 to-fuchsia-400/20 rounded-full blur-3xl animate-[pulse_10s_cubic-bezier(0.4,0,0.6,1)_infinite] [animation-delay:2s]" />
+          <div className="absolute bottom-[40%] left-[20%] w-56 h-56 bg-gradient-to-br from-amber-400/25 via-yellow-400/15 to-lime-400/20 rounded-full blur-2xl animate-[pulse_18s_cubic-bezier(0.4,0,0.6,1)_infinite] [animation-delay:6s]" />
         </div>
 
-        {/* Navbar */}
-        <nav className="fixed top-0 left-0 right-0 h-20 bg-slate-900/40 backdrop-blur-xl border-b border-white/10 z-50 flex items-center justify-between px-8">
-          <Link
-            href="/"
-            className="text-white text-2xl font-black drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] hover:drop-shadow-[0_0_25px_rgba(255,255,255,0.8)] transition-all duration-300"
-          >
-            Metalfama 🏭
-          </Link>
-          <ul className="flex items-center space-x-8">
-            <li>
-              <Link
-                href="/"
-                className="text-white text-lg font-medium transition-all duration-300 hover:text-blue-300 hover:drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]"
-              >
-                🏠 Início
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/diario"
-                className="text-white text-lg font-medium transition-all duration-300 hover:text-blue-300 hover:drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]"
-              >
-                📅 Diário
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/mensal"
-                className="text-white text-lg font-medium transition-all duration-300 hover:text-blue-300 hover:drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]"
-              >
-                📊 Mensal
-              </Link>
-            </li>
-          </ul>
+        {/* Premium Glassmorphism Navbar */}
+        <nav className="fixed top-0 left-0 right-0 h-28 z-50 backdrop-blur-3xl bg-white/5 border-b border-white/10 shadow-2xl">
+          <div className="h-full max-w-7xl mx-auto px-8 flex items-center justify-center space-x-16">
+            <Link
+              href="/"
+              className={`group relative text-xl font-medium transition-all duration-300 text-white/90 hover:text-white hover:scale-105 ${
+                pathname === '/' ? 'text-white scale-105' : ''
+              }`}
+            >
+              <span className="relative z-10">Visão Geral</span>
+              <span className={`absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 rounded-full transition-all duration-300 group-hover:w-full ${
+                pathname === '/' ? '!w-full' : ''
+              }`} />
+            </Link>
+            <Link
+              href="/diario"
+              className={`group relative text-xl font-medium transition-all duration-300 text-white/90 hover:text-white hover:scale-105 ${
+                pathname === '/diario' ? 'text-white scale-105' : ''
+              }`}
+            >
+              <span className="relative z-10">Diário</span>
+              <span className={`absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 rounded-full transition-all duration-300 group-hover:w-full ${
+                pathname === '/diario' ? '!w-full' : ''
+              }`} />
+            </Link>
+            <Link
+              href="/mensal"
+              className={`group relative text-xl font-medium transition-all duration-300 text-white/90 hover:text-white hover:scale-105 ${
+                pathname === '/mensal' ? 'text-white scale-105' : ''
+              }`}
+            >
+              <span className="relative z-10">Mensal</span>
+              <span className={`absolute -bottom-1 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 rounded-full transition-all duration-300 group-hover:w-full ${
+                pathname === '/mensal' ? '!w-full' : ''
+              }`} />
+            </Link>
+          </div>
         </nav>
 
-        <main className="pt-20 min-h-screen relative z-10 p-8">
+        <main className="pt-28 relative z-10">
           {children}
         </main>
       </body>
