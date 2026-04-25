@@ -49,10 +49,7 @@ function formatCurrency(num: number): string {
 }
 
 function formatValue(metric: MetricKey, num: number): string {
-  if (metric === 'faturamento' || metric === 'carteira') {
-    return formatCurrency(num);
-  }
-  return num.toLocaleString('pt-BR');
+  return formatCurrency(num);
 }
 
 export default function DiarioPage() {
