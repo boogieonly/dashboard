@@ -1,68 +1,23 @@
-'use client';
+'use client'
 
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import React from 'react';
 
-interface KPICardProps {
+type KPICardProps = {
   title: string;
   value: string | number;
-  unit?: string;
-  trend?: number;
-  icon?: React.ReactNode;
-  backgroundColor?: string;
-}
+};
 
-export default function KPICard({
-  title,
-  value,
-  unit = '',
-  trend,
-  icon,
-  backgroundColor = 'from-blue-500 to-blue-600',
-}: KPICardProps) {
-  const isTrendingUp = trend !== undefined && trend > 0;
-
+const KPICard: React.FC<KPICardProps> = ({ title, value }) => {
   return (
-    <div
-      className={`bg-gradient-to-br ${backgroundColor} p-6 rounded-xl shadow-xl backdrop-blur-sm border border-white/10 hover:shadow-2xl transition-all duration-300 group cursor-pointer`}
-    >
-      {/* Header com ícone */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white/80 text-sm font-medium">{title}</h3>
-        {icon && <div className="text-white/60 group-hover:text-white transition">{icon}</div>}
+    <div className="group relative bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-6 sm:p-8 rounded-3xl shadow-2xl hover:shadow-3xl border border-white/20 backdrop-blur-xl max-w-sm w-full mx-auto transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02]">
+      <h3 className="text-white/90 text-sm font-semibold uppercase tracking-wider mb-4 drop-shadow-md">
+        {title}
+      </h3>
+      <div className="text-4xl sm:text-5xl lg:text-6xl font-black text-white drop-shadow-2xl">
+        {value}
       </div>
-
-      {/* Valor Principal */}
-      <div className="mb-4">
-        <p className="text-3xl font-bold text-white">
-          {value}
-          <span className="text-lg font-normal text-white/60 ml-1">{unit}</span>
-        </p>
-      </div>
-
-      {/* Trend Indicator */}
-      {trend !== undefined && (
-        <div className="flex items-center gap-2">
-          <div
-            className={`flex items-center gap-1 px-2 py-1 rounded-lg ${
-              isTrendingUp
-                ? 'bg-green-500/20 text-green-300'
-                : 'bg-red-500/20 text-red-300'
-            }`}
-          >
-            {isTrendingUp ? (
-              <TrendingUp size={16} />
-            ) : (
-              <TrendingDown size={16} />
-            )}
-            <span className="text-xs font-semibold">
-              {Math.abs(trend)}%
-            </span>
-          </div>
-          <span className="text-xs text-white/60">
-            vs. mês anterior
-          </span>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+export default KPICard;
