@@ -1,369 +1,434 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+'use client';
 
-type CatKey = 'income' | 'food' | 'transport' | 'leisure' | 'health' | 'other';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 
-type FormData = Record<CatKey, number>;
+type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
 
-type Targets = Record<CatKey, number>;
-
-interface DailyRecord {
-  date: string;
-  income: number;
-  food: number;
-  transport: number;
-  leisure: number;
-  health: number;
-  other: number;
+interface MetricValues {
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteira: number;
+  previsaoAtual: number;
+  previsaoProx: number;
 }
 
-const categories = [
-  { key: 'income' as CatKey, label: 'Entradas', emoji: '💰', color: 'text-green-600' },
-  { key: 'food' as CatKey, label: 'Alimentação', emoji: '🍔', color: 'text-orange-500' },
-  { key: 'transport' as CatKey, label: 'Transporte', emoji: '🚌', color: 'text-blue-500' },
-  { key: 'leisure' as CatKey, label: 'Lazer', emoji: '🎮', color: 'text-purple-500' },
-  { key: 'health' as CatKey, label: 'Saúde', emoji: '💊', color: 'text-red-500' },
-  { key: 'other' as CatKey, label: 'Outros', emoji: '❓', color: 'text-gray-500' },
-] as const;
+type DailyEntry = MetricValues & { date: string };
 
-const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(amount);
+type MetasState = MetricValues;
+
+const defaultMetas: MetasState = {
+  faturamento: 0,
+  vendas: 0,
+  atrasos: 0,
+  carteira: 0,
+  previsaoAtual: 0,
+  previsaoProx: 0,
 };
 
-const Sparkline: React.FC<{ data: number[]; className?: string }> = ({ data, className }) => {
-  const width = 120;
-  const height = 40;
+const metrics = [
+  { key: 'faturamento' as MetricKey, emoji: '💰', label: 'Faturamento' },
+  { key: 'vendas' as MetricKey, emoji: '📈', label: 'Vendas' },
+  { key: 'atrasos' as MetricKey, emoji: '⚠️', label: 'Atrasos' },
+  { key: 'carteira' as MetricKey, emoji: '💼', label: 'Carteira' },
+  { key: 'previsaoAtual' as MetricKey, emoji: '🔮', label: 'Previsão Atual' },
+  { key: 'previsaoProx' as MetricKey, emoji: '📅', label: 'Previsão Próxima' },
+] as Array<{ key: MetricKey; emoji: string; label: string }>;
 
-  if (data.length === 0 || data.every((v) => v === 0)) {
-    return (
-      <div className="h-10 flex items-center justify-center text-gray-400 text-xs font-mono">
-        —
-      </div>
-    );
+const formatCurrency = (value: number): string =>
+  `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const formatDate = (dateStr: string): string => new Date(dateStr).toLocaleDateString('pt-BR');
+
+const getToday = (): string => new Date().toISOString().split('T')[0];
+
+const getMonthStart = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString().split('T')[0];
+};
+
+const sameMonth = (date1: string, date2: string): boolean =>
+  getMonthStart(date1) === getMonthStart(date2);
+
+const computeAccum = (entries: DailyEntry[], metric: MetricKey, upToDate: string): number =>
+  entries
+    .filter((e) => sameMonth(e.date, upToDate) && e.date <= upToDate)
+    .reduce((sum, e) => sum + e[metric], 0);
+
+const getLast7Accum = (entries: DailyEntry[], metric: MetricKey): number[] => {
+  const data: number[] = [];
+  const todayDate = new Date(getToday());
+  for (let i = 6; i >= 0; i--) {
+    const dateCopy = new Date(todayDate);
+    dateCopy.setDate(todayDate.getDate() - i);
+    const dateStr = dateCopy.toISOString().split('T')[0];
+    data.push(computeAccum(entries, metric, dateStr));
   }
+  return data;
+};
 
-  const minV = Math.min(...data);
-  const maxV = Math.max(...data);
+const getLastSnapshotValue = (entries: DailyEntry[], metric: MetricKey): number => {
+  const monthStart = getMonthStart(getToday());
+  const prevEntries = entries.filter((e) => e.date < monthStart);
+  if (prevEntries.length === 0) return 0;
+  const sortedPrev = [...prevEntries].sort((a, b) => a.date.localeCompare(b.date));
+  const lastPrevDate = sortedPrev[sortedPrev.length - 1].date;
+  return computeAccum(entries, metric, lastPrevDate);
+};
 
-  let points: string;
+function Sparkline({
+  data,
+  width = 200,
+  height = 50,
+}: {
+  data: number[];
+  width?: number;
+  height?: number;
+}) {
+  if (!data.length) return null;
 
-  if (maxV === minV) {
-    const y = height / 2;
-    points = data
-      .map((_, i) => `${(i * width) / (data.length - 1)},${y}`)
-      .join(' ');
-  } else {
-    points = data
-      .map((v, i) => {
-        const x = (i * width) / (data.length - 1);
-        const norm = (v - minV) / (maxV - minV);
-        const y = height * (1 - norm);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-  }
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max > min ? max - min : 1;
+  const padding = 8;
+  const points = data
+    .map((val, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const y = height - padding - (height - 2 * padding) * (val - min) / range;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className={`w-full h-10 block ${className || ''}`}>
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[50px]">
       <polyline
         points={points}
         fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
+        stroke="#3B82F6"
+        strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
   );
-};
+}
 
 export default function DiarioPage() {
-  const getToday = useCallback(() => new Date().toISOString().split('T')[0], []);
-
-  const [history, setHistory] = useState<DailyRecord[]>([]);
-  const [currentDate, setCurrentDate] = useState(getToday());
-  const [formData, setFormData] = useState<FormData>({
-    income: 0,
-    food: 0,
-    transport: 0,
-    leisure: 0,
-    health: 0,
-    other: 0,
-  });
-  const [showNewEntry, setShowNewEntry] = useState(false);
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<MetasState>(defaultMetas);
+  const [formDate, setFormDate] = useState(getToday());
+  const [formData, setFormData] = useState<MetricValues>(defaultMetas);
   const [showMetas, setShowMetas] = useState(false);
-  const [targets, setTargets] = useState<Targets>({});
-  const [formTargets, setFormTargets] = useState<Targets>({});
+  const [metaForm, setMetaForm] = useState<MetricValues>(defaultMetas);
 
-  // Load data
   useEffect(() => {
-    const histStr = localStorage.getItem('diarioHistory');
-    if (histStr) {
+    const entriesStr = localStorage.getItem('diario-entries');
+    if (entriesStr) {
       try {
-        setHistory(JSON.parse(histStr));
-      } catch {}
-    }
-    const targStr = localStorage.getItem('diarioTargets');
-    if (targStr) {
-      try {
-        setTargets(JSON.parse(targStr));
-      } catch {}
+        const loadedEntries: DailyEntry[] = JSON.parse(entriesStr);
+        setEntries([...loadedEntries].sort((a, b) => a.date.localeCompare(b.date)));
+      } catch (err) {
+        console.error('Erro ao carregar entradas:', err);
+      }
     }
   }, []);
 
-  // Save history
   useEffect(() => {
-    localStorage.setItem('diarioHistory', JSON.stringify(history));
-  }, [history]);
+    localStorage.setItem('diario-entries', JSON.stringify(entries));
+  }, [entries]);
 
-  // Save targets
   useEffect(() => {
-    localStorage.setItem('diarioTargets', JSON.stringify(targets));
-  }, [targets]);
-
-  // Load form data when date changes in new entry modal
-  useEffect(() => {
-    const existing = history.find((h) => h.date === currentDate);
-    if (existing && showNewEntry) {
-      const newFormData: FormData = categories.reduce(
-        (acc, cat) => ({ ...acc, [cat.key]: existing[cat.key] }),
-        {} as FormData
-      );
-      setFormData(newFormData);
+    const metasStr = localStorage.getItem('diario-metas');
+    if (metasStr) {
+      try {
+        const loadedMetas: Partial<MetricValues> = JSON.parse(metasStr);
+        setMetas({ ...defaultMetas, ...loadedMetas });
+      } catch (err) {
+        console.error('Erro ao carregar metas:', err);
+      }
     }
-  }, [currentDate, history, showNewEntry]);
+  }, []);
 
-  const sums = useMemo(
-    () =>
-      categories.map((cat) => ({
-        key: cat.key,
-        sum: history.reduce((acc, day) => acc + day[cat.key], 0),
-        sparkData: history.slice(0, Math.min(30, history.length)).map((day) => day[cat.key]),
-      })),
-    [history]
+  useEffect(() => {
+    localStorage.setItem('diario-metas', JSON.stringify(metas));
+  }, [metas]);
+
+  const displayEntries = useMemo(
+    () => [...entries].sort((a, b) => b.date.localeCompare(a.date)),
+    [entries]
   );
 
-  const openNewEntry = useCallback(() => {
-    const today = getToday();
-    setCurrentDate(today);
-    const existing = history.find((h) => h.date === today);
-    const newFormData: FormData = categories.reduce(
-      (acc, cat) => ({ ...acc, [cat.key]: existing?.[cat.key] ?? 0 }),
-      {} as FormData
-    );
-    setFormData(newFormData);
-    setShowNewEntry(true);
-  }, [history, getToday]);
-
-  const saveEntry = useCallback(() => {
-    const record: DailyRecord = {
-      date: currentDate,
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newEntry: DailyEntry = {
+      date: formDate,
       ...formData,
     };
-    const index = history.findIndex((h) => h.date === currentDate);
-    let newHistory: DailyRecord[];
-    if (index !== -1) {
-      newHistory = history.map((h, i) => (i === index ? record : h));
+    const existsIndex = entries.findIndex((en) => en.date === formDate);
+    let newEntries: DailyEntry[];
+    if (existsIndex >= 0) {
+      newEntries = [...entries];
+      newEntries[existsIndex] = newEntry;
     } else {
-      newHistory = [record, ...history].sort((a, b) => b.date.localeCompare(a.date));
+      newEntries = [...entries, newEntry];
     }
-    setHistory(newHistory);
-    setShowNewEntry(false);
-  }, [history, currentDate, formData]);
+    setEntries([...newEntries].sort((a, b) => a.date.localeCompare(b.date)));
+    setFormDate(getToday());
+    setFormData(defaultMetas);
+  };
 
-  const openMetas = useCallback(() => {
-    setFormTargets(targets);
+  const handleEdit = (date: string) => {
+    const entry = entries.find((e) => e.date === date);
+    if (entry) {
+      setFormDate(entry.date);
+      setFormData(entry);
+    }
+  };
+
+  const handleDelete = (date: string) => {
+    if (window.confirm(`Deletar entrada de ${formatDate(date)}?`)) {
+      setEntries(entries.filter((e) => e.date !== date));
+    }
+  };
+
+  const handleOpenMetas = () => {
+    setMetaForm(metas);
     setShowMetas(true);
-  }, [targets]);
+  };
 
-  const saveMetas = useCallback(() => {
-    setTargets(formTargets);
+  const handleSaveMetas = () => {
+    setMetas(metaForm);
     setShowMetas(false);
-  }, [formTargets]);
+  };
+
+  const isEditing = entries.some((e) => e.date === formDate);
+
+  const today = getToday();
+
+  const currentAccum = useCallback(
+    (metric: MetricKey) => computeAccum(entries, metric, today),
+    [entries, today]
+  );
+
+  const sparkData = useCallback(
+    (metric: MetricKey) => getLast7Accum(entries, metric),
+    [entries]
+  );
+
+  const progress = useCallback(
+    (metric: MetricKey) => {
+      const m = metas[metric] ?? 0;
+      const a = currentAccum(metric);
+      return m > 0 ? Math.min(100, (a / m) * 100) : 0;
+    },
+    [metas, currentAccum]
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto px-4 max-w-6xl">
-        <h1 className="text-4xl font-bold text-center mb-12 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-          📓 Diário Financeiro
-        </h1>
-
-        <div className="kpis grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {sums.map(({ key, sum, sparkData }, i) => {
-            const cat = categories.find((c) => c.key === key)!;
-            const progress = targets[key] > 0 ? (sum / targets[key]) * 100 : 0;
-            return (
-              <div key={i} className="bg-white p-6 rounded-xl shadow-lg border border-gray-100 hover:shadow-xl transition-shadow">
-                <div className={`text-3xl mb-3 ${cat.color}`}>{cat.emoji}</div>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(sum)}</div>
-                <div className={`text-sm font-medium ${cat.color} mb-4`}>{cat.label}</div>
-                <Sparkline data={sparkData} className={cat.color} />
-                {targets[key] > 0 && (
-                  <div className="mt-4">
-                    <div className="w-full bg-gray-200 rounded-full h-3 mb-1">
-                      <div
-                        className="bg-gradient-to-r from-green-400 to-green-600 h-3 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, progress)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-medium text-gray-600">
-                      {Math.round(progress)}% da meta
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4 mb-12 justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+            Diário de Indicadores
+          </h1>
           <button
-            onClick={openNewEntry}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all"
-          >
-            📝 Nova Entrada
-          </button>
-          <button
-            onClick={openMetas}
-            className="bg-green-500 hover:bg-green-600 text-white px-8 py-4 rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all"
+            onClick={handleOpenMetas}
+            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center gap-2"
           >
             🎯 Metas
           </button>
         </div>
 
-        <section>
-          <h2 className="text-3xl font-bold mb-8 text-gray-800">📜 Histórico</h2>
-          {history.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              Nenhuma entrada ainda. Adicione a primeira!
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          {metrics.map(({ key, emoji, label }) => (
+            <div
+              key={key}
+              className="group bg-white/80 backdrop-blur-sm shadow-xl border border-blue-100/50 rounded-3xl p-8 hover:shadow-2xl hover:-translate-y-2 transition-all duration-300"
+            >
+              <div className="flex items-center mb-4">
+                <span className="text-4xl mr-3 group-hover:scale-110 transition-transform duration-300">{emoji}</span>
+                <h3 className="text-xl font-bold text-gray-900">{label}</h3>
+              </div>
+              <div className="text-4xl font-bold text-blue-600 mb-6">
+                {formatCurrency(currentAccum(key))}
+              </div>
+              <Sparkline data={sparkData(key)} />
+              <div className="mt-6">
+                <div className="flex justify-between text-sm text-gray-600 mb-3">
+                  <span>Meta: {formatCurrency(metas[key] ?? 0)}</span>
+                  <span>{progress(key).toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-blue-400 to-blue-600 h-4 rounded-full transition-all duration-1000 ease-out"
+                    style={{ width: `${progress(key)}%` }}
+                  />
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {history.map((rec) => (
-                <div
-                  key={rec.date}
-                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex flex-col lg:flex-row gap-6 lg:items-center">
-                    <div className="text-xl font-bold text-gray-900 min-w-[120px]">{rec.date}</div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 flex-1">
-                      {categories.map((cat) => (
-                        <div
-                          key={cat.key}
-                          className={`p-3 rounded-lg text-center text-sm font-medium ${cat.color} ${
-                            rec[cat.key] > 0
-                              ? 'bg-opacity-10 backdrop-blur-sm'
-                              : 'opacity-50'
-                          }`}
-                        >
-                          <div className="text-lg mb-1">{cat.emoji}</div>
-                          <div>{formatCurrency(rec[cat.key])}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+          ))}
+        </div>
+
+        {/* Form Section */}
+        <section className="bg-white/80 backdrop-blur-sm shadow-xl border border-blue-100/50 rounded-3xl p-8 mb-12">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8 flex items-center gap-3">
+            {isEditing ? '✏️ Editar Entrada' : '➕ Nova Entrada'}
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                📅 Data
+              </label>
+              <input
+                type="date"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg font-medium"
+                value={formDate}
+                onChange={(e) => setFormDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {metrics.map(({ key, emoji, label }) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <span className="text-xl">{emoji}</span>
+                    {label}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg font-medium"
+                    value={formData[key]}
+                    onChange={(e) =>
+                      setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })
+                    }
+                    required
+                  />
                 </div>
               ))}
             </div>
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-4 px-8 rounded-xl font-bold text-xl shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
+            >
+              {isEditing ? '💾 Atualizar Entrada' : '➕ Adicionar Nova Entrada'}
+            </button>
+          </form>
+        </section>
+
+        {/* History Table */}
+        <section className="bg-white/80 backdrop-blur-sm shadow-xl border border-blue-100/50 rounded-3xl overflow-hidden">
+          <div className="px-8 py-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">📋 Histórico</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full divide-y divide-gray-200">
+              <thead>
+                <tr className="bg-gradient-to-r from-blue-50 to-indigo-50">
+                  <th className="px-8 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Data</th>
+                  {metrics.map(({ key, emoji, label }) => (
+                    <th key={key} className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{emoji}</span>
+                        <span>{label}</span>
+                      </div>
+                    </th>
+                  ))}
+                  <th className="px-8 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {displayEntries.map((entry) => (
+                  <tr key={entry.date} className="hover:bg-blue-50 transition-colors duration-200">
+                    <td className="px-8 py-6 whitespace-nowrap text-sm font-bold text-gray-900">
+                      {formatDate(entry.date)}
+                    </td>
+                    {metrics.map(({ key }) => (
+                      <td key={key} className="px-6 py-6 whitespace-nowrap text-sm text-gray-900 font-medium">
+                        {formatCurrency(entry[key])}
+                      </td>
+                    ))}
+                    <td className="px-8 py-6 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => handleEdit(entry.date)}
+                        className="text-blue-600 hover:text-blue-900 mr-6 font-bold transition-colors duration-200"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(entry.date)}
+                        className="text-red-600 hover:text-red-900 font-bold transition-colors duration-200"
+                      >
+                        Deletar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {displayEntries.length === 0 && (
+            <div className="text-center py-12 text-gray-500 text-lg">
+              Nenhuma entrada registrada ainda. Adicione a primeira!
+            </div>
           )}
         </section>
+
+        {/* Metas Modal */}
+        {showMetas && (
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowMetas(false)}
+          >
+            <div
+              className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-8 border border-blue-100/50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-3xl font-bold text-gray-900 mb-8 flex items-center gap-3">
+                🎯 Metas Mensais
+              </h2>
+              <div className="space-y-6 mb-8">
+                {metrics.map(({ key, emoji, label }) => (
+                  <div key={key}>
+                    <label className="block text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="text-2xl">{emoji}</span>
+                      {label}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg font-medium"
+                      value={metaForm[key]}
+                      onChange={(e) =>
+                        setMetaForm({ ...metaForm, [key]: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-4 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setShowMetas(false)}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-900 py-4 rounded-xl font-bold text-lg transition-all duration-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveMetas}
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all duration-300"
+                >
+                  💾 Salvar Metas
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* New Entry Modal */}
-      {showNewEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-              📝 Nova Entrada
-              <input
-                type="date"
-                value={currentDate}
-                onChange={(e) => setCurrentDate(e.target.value)}
-                className="ml-auto p-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-              />
-            </h2>
-            <div className="text-sm text-gray-600 mb-6">{currentDate}</div>
-            {categories.map((cat) => (
-              <label key={cat.key} className="block mb-5 last:mb-0">
-                <div className={`flex items-center gap-2 mb-2 font-medium ${cat.color}`}>
-                  {cat.emoji} {cat.label}
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData[cat.key]}
-                  onChange={(e) =>
-                    setFormData({ ...formData, [cat.key]: parseFloat(e.target.value) || 0 }
-                  )}
-                  className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm transition-all"
-                  placeholder="0,00"
-                />
-              </label>
-            ))}
-            <div className="flex gap-3 pt-6">
-              <button
-                onClick={() => setShowNewEntry(false)}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-4 px-6 rounded-xl font-semibold transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={saveEntry}
-                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Metas Modal */}
-      {showMetas && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">🎯 Metas Mensais</h2>
-            {categories.map((cat) => (
-              <label key={cat.key} className="block mb-5 last:mb-0">
-                <div className={`flex items-center gap-2 mb-2 font-medium ${cat.color}`}>
-                  {cat.emoji} {cat.label}
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formTargets[cat.key] ?? ''}
-                  onChange={(e) =>
-                    setFormTargets({
-                      ...formTargets,
-                      [cat.key]: parseFloat(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent shadow-sm transition-all"
-                  placeholder="Meta mensal"
-                />
-              </label>
-            ))}
-            <div className="flex gap-3 pt-6">
-              <button
-                onClick={() => setShowMetas(false)}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-4 px-6 rounded-xl font-semibold transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={saveMetas}
-                className="flex-1 bg-green-500 hover:bg-green-600 text-white py-4 px-6 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all"
-              >
-                Salvar Metas
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
