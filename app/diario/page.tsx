@@ -187,7 +187,6 @@ export default function DiarioPage() {
     e.preventDefault();
     const entryDate = formData.date || getToday();
     const newEntry: DailyEntry = {
-      date: entryDate,
       ...formData,
     };
     if (editingId) {
