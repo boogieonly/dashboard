@@ -22,7 +22,7 @@ const METRICS: MetricConfig[] = [
   { key: 'faturamento', name: 'Faturamento', emoji: '💰', color: 'blue' },
   { key: 'vendas', name: 'Vendas', emoji: '📦', color: 'green' },
   { key: 'atrasos', name: 'Atrasos', emoji: '⏰', color: 'orange' },
-  { key: 'carteira', name: 'Carteira', emoji: '💳', color: 'cyan' },
+  { key: 'carteira', name: 'Carteira', emoji: '💼', color: 'cyan' },
   { key: 'previsaoAtual', name: 'Previsão Atual', emoji: '🔮', color: 'teal' },
   { key: 'previsaoProx', name: 'Previsão Próxima', emoji: '📅', color: 'sky' },
 ];
