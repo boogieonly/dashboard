@@ -1,10 +1,10 @@
 'use client';
 
-import BarChartComponent from '@/components/BarChartComponent';
-import PieChartComponent from '@/components/PieChartComponent';
-import KPICard from '@/components/KPICard';
-import MaterialCard from '@/components/MaterialCard';
-import FilterSection from '@/components/FilterSection';
+import BarChartComponent from './components/BarChartComponent';
+import PieChartComponent from './components/PieChartComponent';
+import KPICard from './components/KPICard';
+import MaterialCard from './components/MaterialCard';
+import FilterSection from './components/FilterSection';
 
 type BarData = {
   name: string;
