@@ -440,7 +440,13 @@ export default function DiarioPage() {
                       key={entry.date}
                       className="border-b border-white/10 hover:bg-white/20 transition-colors duration-200"
                     >
-                      <td className="p-4 font-mono font-bold text-white/90">{entry.date}</td>
+                      <td className="p-4 font-mono font-bold text-white/90">
+                      {new Date(entry.date + 'T00:00:00Z').toLocaleDateString('pt-BR', { 
+                      day: '2-digit', 
+                      month: '2-digit', 
+                        year: 'numeric' 
+                        })}
+                        </td>
                       {METRICS.map((m) => (
                         <td key={m.key} className="p-4 text-center font-mono">
                           {((entry as any)[m.key] || 0).toLocaleString('pt-BR')}
