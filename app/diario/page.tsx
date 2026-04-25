@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 
-type FieldKey = 'faturamento' | 'atrasos' | 'vendas' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
+type NumericField = 'faturamento' | 'atrasos' | 'vendas' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
 
 interface DailyEntry {
   date: string;
@@ -14,139 +14,75 @@ interface DailyEntry {
   previsaoMesSeguinte: number;
 }
 
-type Field = {
-  key: FieldKey;
-  label: string;
-  emoji: string;
-  formatter: (value: number) => string;
-};
+function getPercentageChange(current: number, previous: number | undefined): { percentage: string; colorClass: string; arrow: string } {
+  if (previous == null || previous === 0) {
+    return { percentage: 'N/A', colorClass: 'text-gray-500', arrow: '' };
+  }
 
-const sortByDateDesc = (a: DailyEntry, b: DailyEntry): number => {
-  return new Date(b.date).getTime() - new Date(a.date).getTime();
-};
+  const changePercent = ((current - previous) / previous) * 100;
+  const absPercent = Math.abs(changePercent);
+  const percentage = `${changePercent >= 0 ? '+' : '-'}${absPercent.toFixed(1)}%`;
+  const colorClass = changePercent >= 0 ? 'text-green-500' : 'text-red-500';
+  const arrow = changePercent >= 0 ? '↑' : '↓';
 
-const getToday = (): string => new Date().toISOString().split('T')[0];
+  return { percentage, colorClass, arrow };
+}
 
-const formatDate = (dateStr: string): string => {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('pt-BR');
-};
-
-const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value);
-};
-
-const formatNumber = (value: number): string => {
-  return value.toLocaleString('pt-BR');
-};
-
-const fields: Field[] = [
-  { key: 'faturamento', label: 'Faturamento', emoji: '💰', formatter: formatCurrency },
-  { key: 'atrasos', label: 'Atrasos', emoji: '⏰', formatter: formatNumber },
-  { key: 'vendas', label: 'Vendas', emoji: '📈', formatter: formatCurrency },
-  { key: 'carteiraTotal', label: 'Carteira Total', emoji: '💼', formatter: formatCurrency },
-  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', emoji: '🔮', formatter: formatCurrency },
-  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', emoji: '📅', formatter: formatCurrency },
-];
-
-const initialFormData: DailyEntry = {
-  date: getToday(),
-  faturamento: 0,
-  atrasos: 0,
-  vendas: 0,
-  carteiraTotal: 0,
-  previsaoMesAtual: 0,
-  previsaoMesSeguinte: 0,
-};
+const kpiConfigs = [
+  { key: 'faturamento' as NumericField, emoji: '💰', title: 'Faturamento' },
+  { key: 'vendas' as NumericField, emoji: '📈', title: 'Vendas' },
+  { key: 'atrasos' as NumericField, emoji: '⏰', title: 'Atrasos' },
+  { key: 'carteiraTotal' as NumericField, emoji: '💼', title: 'Carteira Total' },
+  { key: 'previsaoMesAtual' as NumericField, emoji: '🔮', title: 'Previsão Mês Atual' },
+  { key: 'previsaoMesSeguinte' as NumericField, emoji: '📅', title: 'Previsão Mês Seguinte' },
+] as Array<{ key: NumericField; emoji: string; title: string }>;
 
 export default function DiarioPage() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [formData, setFormData] = useState<DailyEntry>(initialFormData);
-  const [isEditing, setIsEditing] = useState(false);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [formData, setFormData] = useState<DailyEntry>({
+    date: todayStr,
+    faturamento: 0,
+    atrasos: 0,
+    vendas: 0,
+    carteiraTotal: 0,
+    previsaoMesAtual: 0,
+    previsaoMesSeguinte: 0,
+  });
 
-  // Load from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('diarioEntries');
-    if (saved) {
-      try {
-        setEntries(JSON.parse(saved));
-      } catch (e) {
-        console.error('Error loading entries:', e);
-      }
-    }
-  }, []);
-
-  // Save to localStorage
-  useEffect(() => {
-    localStorage.setItem('diarioEntries', JSON.stringify(entries));
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [entries]);
 
-  // Update current entry when date changes
-  useEffect(() => {
-    const existingEntry = entries.find((e) => e.date === formData.date);
-    if (existingEntry) {
-      setFormData(existingEntry);
-      setIsEditing(true);
-    } else {
-      setFormData({
-        ...formData,
-        faturamento: 0,
-        atrasos: 0,
-        vendas: 0,
-        carteiraTotal: 0,
-        previsaoMesAtual: 0,
-        previsaoMesSeguinte: 0,
-      });
-      setIsEditing(false);
-    }
-  }, [formData.date, entries]);
-
-  const sortedEntries = useMemo(
-    () => entries.slice().sort(sortByDateDesc),
-    [entries]
-  );
-
-  const latest = sortedEntries[0];
-
-  const handleInputChange =
-    (key: FieldKey) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setFormData((prev) => ({
-        ...prev,
-        [key]: Number(e.target.value) || 0,
-      }));
-    };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData((prev) => ({ ...prev, date: e.target.value }));
+  const formatDate = (isoDate: string): string => {
+    return new Date(isoDate).toLocaleDateString('pt-BR');
   };
 
-  const handleReset = () => {
-    setFormData(initialFormData);
-    setIsEditing(false);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name as keyof DailyEntry]: name === 'date' ? value : (Number(value) || 0),
+    }));
   };
 
-  const handleEdit = (date: string) => {
-    const entry = entries.find((e) => e.date === date);
-    if (entry) {
-      setFormData(entry);
-      setIsEditing(true);
-    }
-  };
+  const resetForm = useCallback(() => {
+    setFormData({
+      date: new Date().toISOString().split('T')[0],
+      faturamento: 0,
+      atrasos: 0,
+      vendas: 0,
+      carteiraTotal: 0,
+      previsaoMesAtual: 0,
+      previsaoMesSeguinte: 0,
+    });
+  }, []);
 
-  const handleDelete = (date: string) => {
-    if (confirm('Tem certeza que deseja excluir esta entrada?')) {
-      setEntries((prev) => prev.filter((e) => e.date !== date));
-      if (formData.date === date) {
-        handleReset();
-      }
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const entryData: DailyEntry = {
+    if (!formData.date) return;
+
+    const newEntry: DailyEntry = {
       date: formData.date,
       faturamento: formData.faturamento,
       atrasos: formData.atrasos,
@@ -156,162 +92,287 @@ export default function DiarioPage() {
       previsaoMesSeguinte: formData.previsaoMesSeguinte,
     };
 
-    if (isEditing) {
-      setEntries((prev) =>
-        prev.map((e) => (e.date === formData.date ? entryData : e))
-      );
-    } else {
-      setEntries((prev) => [entryData, ...prev]);
-    }
-    handleReset();
+    setEntries((prev) => {
+      const index = prev.findIndex((entry) => entry.date === newEntry.date);
+      if (index !== -1) {
+        const updated = [...prev];
+        updated[index] = newEntry;
+        return updated;
+      }
+      return [...prev, newEntry];
+    });
+
+    resetForm();
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="text-center mb-16">
-          <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 bg-clip-text text-transparent mb-4 drop-shadow-2xl">
-            Diário de Indicadores
-          </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Registre e acompanhe seus indicadores diários com facilidade.
-          </p>
-        </header>
+  const handleEdit = (entry: DailyEntry) => {
+    setFormData(entry);
+  };
 
-        {latest && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-            {fields.map((field) => (
+  const deleteData = (date: string) => {
+    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
+      setEntries((prev) => prev.filter((e) => e.date !== date));
+      if (formData.date === date) {
+        resetForm();
+      }
+    }
+  };
+
+  useEffect(() => {
+    const stored = localStorage.getItem('dailyEntries');
+    if (stored) {
+      try {
+        const parsed: DailyEntry[] = JSON.parse(stored);
+        setEntries(parsed);
+      } catch (error) {
+        console.error('Erro ao carregar entradas:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('dailyEntries', JSON.stringify(entries));
+  }, [entries]);
+
+  const isEditing = entries.some((e) => e.date === formData.date);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-blue-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-5xl md:text-6xl font-black bg-gradient-to-r from-gray-900 via-gray-800 to-slate-900 bg-clip-text text-transparent mb-16 text-center drop-shadow-2xl">
+          Diário de Indicadores
+        </h1>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
+          {kpiConfigs.map((config) => {
+            const key = config.key as keyof DailyEntry;
+            const current = (sortedEntries[0]?.[key] as number) ?? 0;
+            const previous = sortedEntries[1]?.[key] as number | undefined;
+            const change = getPercentageChange(current, previous);
+
+            return (
               <div
-                key={field.key}
-                className="group bg-white/80 backdrop-blur-sm border border-white/50 rounded-3xl p-8 shadow-2xl hover:shadow-3xl hover:-translate-y-2 transition-all duration-500 flex flex-col items-center text-center overflow-hidden"
+                key={config.key}
+                className="group bg-white/70 backdrop-blur-xl shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl hover:-translate-y-2 transition-all duration-500 hover:bg-white/90"
               >
-                <div className="text-6xl mb-6 group-hover:scale-110 transition-transform duration-300">
-                  {field.emoji}
+                <div className="text-6xl mb-6 group-hover:scale-110 transition-all duration-300">
+                  {config.emoji}
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-4 px-4">
-                  {field.label}
+                <h3 className="text-2xl font-bold text-gray-800 mb-6 capitalize tracking-wide">
+                  {config.title}
                 </h3>
-                <div className="text-4xl font-black bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent drop-shadow-lg">
-                  {field.formatter(latest[field.key as keyof DailyEntry] as number)}
+                <div className="text-5xl lg:text-6xl font-black text-gray-900 mb-8 drop-shadow-lg">
+                  {current.toLocaleString('pt-BR')}
+                </div>
+                <div
+                  className={`flex items-center justify-center gap-3 text-xl font-bold px-8 py-4 rounded-2xl backdrop-blur-sm shadow-xl transition-all duration-300 ${
+                    change.colorClass === 'text-green-500'
+                      ? 'bg-gradient-to-r from-green-100/80 to-emerald-100/80 border border-green-200 shadow-green-200/50'
+                      : change.colorClass === 'text-red-500'
+                      ? 'bg-gradient-to-r from-red-100/80 to-rose-100/80 border border-red-200 shadow-red-200/50'
+                      : 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border border-gray-200 shadow-gray-200/50'
+                  }`}
+                >
+                  <span className="text-3xl -mr-1">{change.arrow}</span>
+                  <span>{change.percentage}</span>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur-sm shadow-3xl rounded-3xl p-10 mb-16 border border-white/50">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold text-gray-800 flex items-center justify-center space-x-4 mx-auto mb-4 max-w-md">
-              <span className="text-5xl">📝</span>
-              <span>{isEditing ? 'Editar Entrada' : 'Nova Entrada'}</span>
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
-            <div className="col-span-full">
-              <label className="block text-lg font-semibold text-gray-700 mb-4 flex items-center justify-center space-x-3">
-                <span className="text-4xl">📅</span>
-                <span>Data</span>
+        {/* Form Section */}
+        <section className="bg-white/60 backdrop-blur-xl shadow-2xl rounded-3xl p-12 mb-20 border border-white/50">
+          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-12 text-center drop-shadow-lg">
+            {isEditing ? 'Editar Entrada' : 'Nova Entrada'}
+          </h2>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            <div>
+              <label htmlFor="date" className="block text-xl font-semibold text-gray-700 mb-4">
+                Data
               </label>
               <input
+                id="date"
+                name="date"
                 type="date"
                 value={formData.date}
-                onChange={handleDateChange}
-                className="w-full px-6 py-4 text-xl border-2 border-gray-200 rounded-2xl shadow-xl focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500 transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500/50 focus:border-blue-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
               />
             </div>
-
-            {fields.map((field) => (
-              <div key={field.key} className="space-y-3">
-                <label className="block text-lg font-semibold text-gray-700 flex items-center space-x-3">
-                  <span className="text-4xl">{field.emoji}</span>
-                  <span>{field.label}</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData[field.key]}
-                  onChange={handleInputChange(field.key)}
-                  className="w-full px-6 py-4 text-xl border-2 border-gray-200 rounded-2xl shadow-xl focus:outline-none focus:ring-4 focus:ring-emerald-200 focus:border-emerald-500 transition-all duration-300 bg-white/50 backdrop-blur-sm font-mono tracking-wider"
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-6 mt-16 pt-10 border-t-4 border-indigo-100">
-            <button
-              type="button"
-              onClick={handleReset}
-              className="flex-1 py-5 px-10 border-2 border-gray-300 rounded-2xl text-xl font-bold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-4 focus:ring-gray-200 transition-all duration-300 shadow-xl hover:shadow-2xl hover:-translate-y-1"
-            >
-              Limpar
-            </button>
-            <button
-              type="submit"
-              className="flex-1 py-5 px-10 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-xl font-black text-white rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-300 transition-all duration-300 shadow-2xl hover:shadow-3xl hover:-translate-y-1 transform"
-            >
-              {isEditing ? 'Atualizar' : 'Salvar'}
-            </button>
-          </div>
-        </form>
-
-        {sortedEntries.length > 0 && (
-          <div className="bg-white/80 backdrop-blur-sm shadow-3xl rounded-3xl overflow-hidden border border-white/50">
-            <div className="px-8 py-8 bg-gradient-to-r from-indigo-500 to-blue-600">
-              <h2 className="text-3xl font-bold text-white flex items-center space-x-3">
-                <span className="text-4xl">📊</span>
-                <span>Histórico de Entradas</span>
-              </h2>
+            <div>
+              <label htmlFor="faturamento" className="block text-xl font-semibold text-gray-700 mb-4">
+                Faturamento
+              </label>
+              <input
+                id="faturamento"
+                name="faturamento"
+                type="number"
+                step="0.01"
+                value={formData.faturamento || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/50 focus:border-emerald-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full divide-y divide-gray-200">
+            <div>
+              <label htmlFor="atrasos" className="block text-xl font-semibold text-gray-700 mb-4">
+                Atrasos
+              </label>
+              <input
+                id="atrasos"
+                name="atrasos"
+                type="number"
+                value={formData.atrasos || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-orange-500/50 focus:border-orange-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="vendas" className="block text-xl font-semibold text-gray-700 mb-4">
+                Vendas
+              </label>
+              <input
+                id="vendas"
+                name="vendas"
+                type="number"
+                step="0.01"
+                value={formData.vendas || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-green-500/50 focus:border-green-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="carteiraTotal" className="block text-xl font-semibold text-gray-700 mb-4">
+                Carteira Total
+              </label>
+              <input
+                id="carteiraTotal"
+                name="carteiraTotal"
+                type="number"
+                step="0.01"
+                value={formData.carteiraTotal || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-purple-500/50 focus:border-purple-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="previsaoMesAtual" className="block text-xl font-semibold text-gray-700 mb-4">
+                Previsão Mês Atual
+              </label>
+              <input
+                id="previsaoMesAtual"
+                name="previsaoMesAtual"
+                type="number"
+                step="0.01"
+                value={formData.previsaoMesAtual || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-indigo-500/50 focus:border-indigo-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
+            </div>
+            <div className="lg:col-span-2 xl:col-span-3">
+              <label htmlFor="previsaoMesSeguinte" className="block text-xl font-semibold text-gray-700 mb-4">
+                Previsão Mês Seguinte
+              </label>
+              <input
+                id="previsaoMesSeguinte"
+                name="previsaoMesSeguinte"
+                type="number"
+                step="0.01"
+                value={formData.previsaoMesSeguinte || ''}
+                onChange={handleChange}
+                className="w-full px-6 py-5 text-xl border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-pink-500/50 focus:border-pink-500 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/80 backdrop-blur-sm"
+                required
+              />
+            </div>
+            <div className="col-span-full flex flex-col sm:flex-row gap-6 justify-end pt-8">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex-1 sm:w-auto px-12 py-6 bg-gradient-to-r from-gray-400 to-gray-500 text-xl font-bold text-white rounded-3xl shadow-2xl hover:shadow-3xl hover:from-gray-500 hover:to-gray-600 active:scale-95 transition-all duration-300"
+              >
+                Resetar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 sm:w-auto px-12 py-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-xl font-bold text-white rounded-3xl shadow-2xl hover:shadow-3xl hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all duration-300"
+              >
+                {isEditing ? 'Atualizar' : 'Salvar'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        {/* Historical List */}
+        <section className="bg-white/60 backdrop-blur-xl shadow-2xl rounded-3xl p-12 border border-white/50">
+          <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-12 text-center drop-shadow-lg">
+            Histórico de Entradas
+          </h2>
+          {sortedEntries.length === 0 ? (
+            <div className="text-center py-20 text-2xl text-gray-500 font-medium">
+              Nenhuma entrada registrada ainda. <br /> Adicione a primeira acima!
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-gray-200">
+              <table className="w-full table-auto divide-y divide-gray-200">
                 <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                   <tr>
-                    <th className="px-8 py-6 text-left text-xl font-bold text-gray-900 sm:w-32">Data</th>
-                    {fields.map((field) => (
-                      <th
-                        key={field.key}
-                        className="px-6 py-6 text-left text-xl font-bold text-gray-900"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <span className="text-2xl">{field.emoji}</span>
-                          <span className="hidden md:inline">{field.label}</span>
-                        </div>
-                      </th>
-                    ))}
-                    <th className="px-8 py-6 text-left text-xl font-bold text-gray-900 sm:w-48">
-                      Ações
-                    </th>
+                    <th className="px-8 py-6 text-left text-xl font-bold text-gray-800 rounded-tl-3xl">Data</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800">Faturamento</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800">Atrasos</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800">Vendas</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800">Carteira Total</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800">Previsão Atual</th>
+                    <th className="px-6 py-6 text-left text-xl font-bold text-gray-800 rounded-tr-3xl">Previsão Seguinte</th>
+                    <th className="px-6 py-6 text-center text-xl font-bold text-gray-800 rounded-tr-3xl">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
+                <tbody className="divide-y divide-gray-100 bg-white/50">
                   {sortedEntries.map((entry) => (
                     <tr
                       key={entry.date}
-                      className="hover:bg-indigo-50/50 transition-all duration-200"
+                      className="hover:bg-gray-50/60 transition-all duration-200"
                     >
-                      <td className="px-8 py-6 whitespace-nowrap text-xl font-bold text-gray-900">
+                      <td className="px-8 py-6 font-bold text-lg text-gray-900">
                         {formatDate(entry.date)}
                       </td>
-                      {fields.map((field) => (
-                        <td key={field.key} className="px-6 py-6 whitespace-nowrap text-lg font-mono text-gray-800">
-                          {field.formatter(entry[field.key as keyof Omit<DailyEntry, 'date'>] as number)}
-                        </td>
-                      ))}
-                      <td className="px-8 py-6 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-4">
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.faturamento.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.atrasos.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.vendas.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.carteiraTotal.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.previsaoMesAtual.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6 font-semibold text-gray-800">
+                        {entry.previsaoMesSeguinte.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-6">
+                        <div className="flex gap-4 justify-center">
                           <button
-                            onClick={() => handleEdit(entry.date)}
-                            className="text-indigo-600 hover:text-indigo-900 font-bold py-2 px-6 rounded-xl hover:bg-indigo-100 transition-all duration-200 border border-indigo-200 hover:border-indigo-300"
+                            onClick={() => handleEdit(entry)}
+                            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 whitespace-nowrap"
                           >
                             Editar
                           </button>
                           <button
-                            onClick={() => handleDelete(entry.date)}
-                            className="text-red-600 hover:text-red-900 font-bold py-2 px-6 rounded-xl hover:bg-red-100 transition-all duration-200 border border-red-200 hover:border-red-300"
+                            onClick={() => deleteData(entry.date)}
+                            className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 whitespace-nowrap"
                           >
-                            Excluir
+                            Deletar
                           </button>
                         </div>
                       </td>
@@ -320,8 +381,8 @@ export default function DiarioPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          )}
+        </section>
       </div>
     </div>
   );
