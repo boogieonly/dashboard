@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
+type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
 
 type DailyEntry = {
   date: string;
@@ -15,110 +15,86 @@ type DailyEntry = {
 };
 
 type Metas = {
-  [K in MetricKey]: number;
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteira: number;
+  previsaoAtual: number;
+  previsaoProx: number;
 };
 
-interface Metric {
-  key: MetricKey;
-  label: string;
-  emoji: string;
-  color: string;
-}
-
-type FormDataType = DailyEntry;
-
-const METRICS: Metric[] = [
-  { key: 'faturamento', label: 'Faturamento', emoji: '💰', color: 'stroke-emerald-500' },
-  { key: 'vendas', label: 'Vendas', emoji: '📈', color: 'stroke-blue-500' },
-  { key: 'atrasos', label: 'Atrasos', emoji: '⚠️', color: 'stroke-amber-500' },
-  { key: 'carteiraTotal', label: 'Carteira Total', emoji: '💼', color: 'stroke-slate-600' },
-  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', emoji: '🔮', color: 'stroke-cyan-500' },
-  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', emoji: '📅', color: 'stroke-sky-500' },
+const metrics = [
+  { key: 'faturamento' as MetricKey, emoji: '💰', label: 'Faturamento' },
+  { key: 'vendas' as MetricKey, emoji: '📈', label: 'Vendas' },
+  { key: 'atrasos' as MetricKey, emoji: '⚠️', label: 'Atrasos' },
+  { key: 'carteira' as MetricKey, emoji: '💼', label: 'Carteira' },
+  { key: 'previsaoAtual' as MetricKey, emoji: '🔮', label: 'Previsão Atual' },
+  { key: 'previsaoProx' as MetricKey, emoji: '📅', label: 'Previsão Próx' },
 ];
-
-const defaultMetas: Metas = {
-  faturamento: 1000000,
-  vendas: 200,
-  atrasos: 10,
-  carteiraTotal: 2000000,
-  previsaoMesAtual: 1100000,
-  previsaoMesSeguinte: 1200000,
-};
 
 const getToday = (): string => new Date().toISOString().split('T')[0];
 
 const getMonthStart = (dateStr: string): string => {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'T00:00:00');
   date.setDate(1);
   date.setHours(0, 0, 0, 0);
   return date.toISOString().split('T')[0];
 };
 
-const sameMonth = (date1: string, date2: string): boolean =>
-  getMonthStart(date1) === getMonthStart(date2);
+const sameMonth = (date1: string, date2: string): boolean => {
+  const d1 = new Date(date1 + 'T00:00:00');
+  const d2 = new Date(date2 + 'T00:00:00');
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
+};
 
 const computeAccum = (entries: DailyEntry[], metric: MetricKey, upToDate: string): number => {
-  const monthStart = getMonthStart(upToDate);
   return entries
-    .filter((entry) => sameMonth(entry.date, upToDate) && entry.date <= upToDate)
-    .reduce((acc, entry) => acc + entry[metric], 0);
+    .filter((e) => e.date <= upToDate)
+    .reduce((sum, e) => sum + e[metric], 0);
 };
 
-const getLastSnapshotValue = (entries: DailyEntry[], metric: MetricKey): number => {
-  const currentMonthEntries = entries.filter((e) => sameMonth(e.date, getToday()));
-  if (currentMonthEntries.length === 0) return 0;
-  const latestDate = currentMonthEntries.reduce(
-    (maxDate, e) => (new Date(e.date) > new Date(maxDate) ? e.date : maxDate),
-    currentMonthEntries[0].date
-  );
-  const latestEntry = currentMonthEntries.find((e) => e.date === latestDate);
-  return latestEntry ? latestEntry[metric] : 0;
+const getLastSnapshotValue = (entries: DailyEntry[], metric: MetricKey): number | null => {
+  const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return sorted[0]?.[metric] ?? null;
 };
 
-const getLast7Accum = (entries: DailyEntry[], metric: MetricKey): number[] => {
-  const todayDate = getToday();
-  const today = new Date(todayDate);
-  const data: number[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const checkDate = new Date(today);
-    checkDate.setDate(today.getDate() - i);
-    const dateStr = checkDate.toISOString().split('T')[0];
-    const accum = computeAccum(entries, metric, dateStr);
-    data.push(accum);
-  }
-  return data;
+const formatDate = (dateStr: string): string => {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('pt-BR');
 };
 
-const formatDate = (isoDate: string): string => {
-  const date = new Date(isoDate);
-  const day = date.getDate().toString().padStart(2, '0');
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-};
-
-interface SparklineProps {
+const Sparkline = ({
+  data,
+  width = 120,
+  height = 30,
+}: {
   data: number[];
-  color: string;
-}
-
-const Sparkline = ({ data, color }: SparklineProps) => {
-  if (data.length === 0 || data.every((v) => v === 0)) {
-    return <div className="w-20 h-5 bg-gray-200 rounded" />;
+  width?: number;
+  height?: number;
+}) => {
+  if (data.length === 0) {
+    return <svg width={width} height={height} className="text-sky-500" />;
   }
-  const max = Math.max(...data);
   const min = Math.min(...data);
+  const max = Math.max(...data);
   const range = max - min || 1;
-  const normalizedY = data.map((v) => 20 - ((v - min) / range) * 18);
   const points = data
-    .map((_, i) => `${(i / (data.length - 1)) * 80} ${normalizedY[i]}`)
+    .map((d, i) => {
+      const x = (i / (data.length - 1)) * (width || 120);
+      const y = (height || 30) - ((d - min) / range) * (height || 30);
+      return `${x},${y}`;
+    })
     .join(' ');
   return (
-    <svg className="w-20 h-5" viewBox="0 0 80 20">
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="text-sky-500"
+    >
       <polyline
         points={points}
         fill="none"
-        stroke={color}
+        stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -127,354 +103,310 @@ const Sparkline = ({ data, color }: SparklineProps) => {
   );
 };
 
-export default function Diario() {
-  const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [metas, setMetas] = useState<Metas>(defaultMetas);
-  const [formData, setFormData] = useState<FormDataType>({
+export default function DiarioPage() {
+  const defaultFormData: DailyEntry = {
     date: getToday(),
     faturamento: 0,
     vendas: 0,
     atrasos: 0,
-    carteiraTotal: 0,
-    previsaoMesAtual: 0,
-    previsaoMesSeguinte: 0,
-  });
+    carteira: 0,
+    previsaoAtual: 0,
+    previsaoProx: 0,
+  };
+
+  const defaultMetas: Metas = {
+    faturamento: 0,
+    vendas: 0,
+    atrasos: 0,
+    carteira: 0,
+    previsaoAtual: 0,
+    previsaoProx: 0,
+  };
+
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<Metas>(defaultMetas);
+  const [formData, setFormData] = useState<DailyEntry>(defaultFormData);
+  const [metasForm, setMetasForm] = useState<Metas>(defaultMetas);
   const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
   const [showMetasModal, setShowMetasModal] = useState(false);
-  const [tempMetas, setTempMetas] = useState<Metas | undefined>();
 
-  const currentMonthEntries = entries
-    .filter((e) => sameMonth(e.date, getToday()))
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const saveEntriesLocal = (newEntries: DailyEntry[]) => {
+    const sorted = [...newEntries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setEntries(sorted);
+    localStorage.setItem('diario-entries', JSON.stringify(sorted));
+  };
+
+  const saveMetasLocal = (newMetas: Metas) => {
+    setMetas(newMetas);
+    localStorage.setItem('diario-metas', JSON.stringify(newMetas));
+  };
 
   useEffect(() => {
     try {
-      const savedEntries = localStorage.getItem('diario-entries');
-      if (savedEntries) {
-        setEntries(JSON.parse(savedEntries));
+      const entriesStr = localStorage.getItem('diario-entries');
+      if (entriesStr) {
+        const parsedEntries: DailyEntry[] = JSON.parse(entriesStr);
+        saveEntriesLocal(parsedEntries);
       }
-      const savedMetas = localStorage.getItem('diario-metas');
-      if (savedMetas) {
-        setMetas(JSON.parse(savedMetas));
+      const metasStr = localStorage.getItem('diario-metas');
+      if (metasStr) {
+        const parsedMetas: Metas = JSON.parse(metasStr);
+        saveMetasLocal(parsedMetas);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('diario-entries', JSON.stringify(entries));
-  }, [entries]);
-
-  useEffect(() => {
-    localStorage.setItem('diario-metas', JSON.stringify(metas));
-  }, [metas]);
-
-  useEffect(() => {
-    if (showMetasModal) {
-      setTempMetas(metas);
-    } else {
-      setTempMetas(undefined);
+  const getSparklineData = (metric: MetricKey): number[] => {
+    const data: number[] = [];
+    const today = new Date(getToday() + 'T12:00:00');
+    for (let i = 6; i >= 0; i--) {
+      const pastDate = new Date(today);
+      pastDate.setDate(today.getDate() - i);
+      const dateStr = pastDate.toISOString().split('T')[0];
+      const entry = entries.find((e) => e.date === dateStr);
+      data.push(entry ? entry[metric] : 0);
     }
-  }, [showMetasModal, metas]);
-
-  const getCurrentValue = (metric: MetricKey): number => {
-    if (metric === 'previsaoMesAtual' || metric === 'previsaoMesSeguinte') {
-      return getLastSnapshotValue(entries, metric);
-    }
-    return computeAccum(entries, metric, getToday());
+    return data;
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const newEntry: DailyEntry = formData as DailyEntry;
+  const getCurrentMonthAccum = (metric: MetricKey): number => {
+    const todayStr = getToday();
+    const monthEntries = entries.filter((e) => sameMonth(e.date, todayStr));
+    return computeAccum(monthEntries, metric, todayStr);
+  };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     if (editingEntry) {
-      setEntries(entries.map((e) => (e.date === editingEntry.date ? newEntry : e)));
+      const newEntries = entries.map((en) => (en.date === formData.date ? formData : en));
+      saveEntriesLocal(newEntries);
       setEditingEntry(null);
     } else {
-      const exists = entries.find((e) => e.date === newEntry.date);
-      if (exists) {
-        alert('Entrada para esta data já existe. Use Editar.');
+      if (entries.some((e) => e.date === formData.date)) {
+        alert('Já existe uma entrada para esta data.');
         return;
       }
-      setEntries([...entries, newEntry]);
+      const newEntries = [...entries, formData];
+      saveEntriesLocal(newEntries);
     }
-    setFormData({
-      date: getToday(),
-      faturamento: 0,
-      vendas: 0,
-      atrasos: 0,
-      carteiraTotal: 0,
-      previsaoMesAtual: 0,
-      previsaoMesSeguinte: 0,
-    });
+    setFormData(defaultFormData);
   };
 
   const editEntry = (entry: DailyEntry) => {
-    setEditingEntry(entry);
     setFormData(entry);
+    setEditingEntry(entry);
   };
 
   const deleteEntry = (date: string) => {
     if (confirm('Tem certeza que deseja deletar esta entrada?')) {
-      setEntries(entries.filter((e) => e.date !== date));
-      if (editingEntry?.date === date) {
-        setEditingEntry(null);
-        setFormData({
-          date: getToday(),
-          faturamento: 0,
-          vendas: 0,
-          atrasos: 0,
-          carteiraTotal: 0,
-          previsaoMesAtual: 0,
-          previsaoMesSeguinte: 0,
-        });
-      }
+      const newEntries = entries.filter((e) => e.date !== date);
+      saveEntriesLocal(newEntries);
     }
   };
 
-  const handleSaveMetas = () => {
-    if (tempMetas) {
-      setMetas(tempMetas);
-      setShowMetasModal(false);
-    }
+  const openMetasModal = () => {
+    setMetasForm(metas);
+    setShowMetasModal(true);
   };
 
-  const updateTempMeta = (key: MetricKey, value: number) => {
-    setTempMetas((prev) => ({ ...prev!, [key]: value }));
+  const handleMetasSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveMetasLocal(metasForm);
+    setShowMetasModal(false);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-8 text-center">
-          📊 Diário de Métricas
-        </h1>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-sky-100 p-4 sm:p-6 lg:p-8">
+      <h1 className="text-3xl sm:text-4xl font-bold text-sky-800 mb-8 text-center">Diário</h1>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-12">
-          {METRICS.map((metric) => {
-            const value = getCurrentValue(metric.key);
-            const target = metas[metric.key];
-            const progress = target > 0 ? Math.min(100, (value / target) * 100) : 0;
-            const sparkData = getLast7Accum(entries, metric.key);
-            const progressBg =
-              progress >= 100
-                ? 'bg-emerald-500'
-                : progress >= 80
-                ? 'bg-amber-500'
-                : 'bg-red-500';
-            return (
-              <div
-                key={metric.key}
-                className="bg-white/80 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/50 hover:shadow-2xl transition-all duration-300"
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-2xl md:text-3xl">{metric.emoji}</span>
-                  <span
-                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      progress >= 100
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : progress >= 80
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}
-                  >
-                    {Math.round(progress)}%
-                  </span>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2 truncate">
-                  {metric.label}
-                </h3>
-                <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-                  {value.toLocaleString('pt-BR')}
-                </p>
-                <Sparkline data={sparkData} color={metric.color} />
-                <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
-                  <div
-                    className={`h-2 rounded-full bg-gradient-to-r from-blue-500 to-sky-500 transition-all ${progressBg === 'bg-red-500' ? 'from-red-500 to-red-400' : progressBg === 'bg-amber-500' ? 'from-amber-500 to-amber-400' : 'from-emerald-500 to-emerald-400'}`}
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-12">
+        {metrics.map(({ key, emoji, label }) => {
+          const currentValue = getLastSnapshotValue(entries, key) ?? 0;
+          const accum = getCurrentMonthAccum(key);
+          const progress = metas[key] > 0 ? (accum / metas[key]) * 100 : 0;
+          const sparkData = getSparklineData(key);
+          return (
+            <div
+              key={key}
+              className="bg-white/70 backdrop-blur-md rounded-2xl p-6 sm:p-8 shadow-xl border border-sky-200 hover:shadow-2xl transition-all duration-300"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-3xl sm:text-4xl">{emoji}</span>
+                <span className="text-xs sm:text-sm font-medium text-sky-600 whitespace-nowrap">{label}</span>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Formulário */}
-        <section className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 md:p-8 shadow-2xl mb-12">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            📝 {editingEntry ? 'Editar Entrada' : 'Nova Entrada'}
-          </h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-            <div className="form-control w-full">
-              <label className="label">
-                <span className="label-text">Data</span>
-              </label>
-              <input
-                type="date"
-                className="input input-bordered w-full max-w-xs md:max-w-none"
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                required
-              />
-            </div>
-            {METRICS.map((m) => (
-              <div key={m.key} className="form-control w-full">
-                <label className="label">
-                  <span className="label-text flex items-center gap-2">
-                    {m.emoji} {m.label}
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  className="input input-bordered w-full"
-                  value={formData[m.key]}
-                  onChange={(e) =>
-                    setFormData({ ...formData, [m.key]: parseFloat(e.target.value) || 0 })
-                  }
-                  placeholder="0"
-                  required
+              <div className="text-2xl sm:text-3xl lg:text-4xl font-bold text-sky-900 mb-4">
+                {currentValue.toLocaleString('pt-BR')}
+              </div>
+              <div className="mb-4">
+                <Sparkline data={sparkData} width={120} height={30} />
+              </div>
+              <div className="w-full bg-sky-200 rounded-full h-2 sm:h-3">
+                <div
+                  className="bg-gradient-to-r from-sky-500 to-blue-500 h-2 sm:h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, progress)}%` }}
                 />
               </div>
-            ))}
-            <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4 flex flex-col sm:flex-row gap-3 pt-2">
-              <button type="submit" className="btn btn-primary flex-1">
-                {editingEntry ? 'Atualizar' : 'Adicionar Entrada'}
-              </button>
-              {editingEntry && (
+              <p className="text-xs sm:text-sm text-sky-700 mt-2 font-medium">
+                {progress.toFixed(1)}% da meta
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Formulário */}
+      <section className="bg-white/60 backdrop-blur-md rounded-2xl p-6 sm:p-8 mb-12 shadow-lg border border-sky-200">
+        <h2 className="text-xl sm:text-2xl font-bold text-sky-800 mb-6">
+          {editingEntry ? 'Editar Entrada' : 'Nova Entrada'}
+        </h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div>
+            <label className="block text-sm font-medium text-sky-700 mb-2">Data</label>
+            <input
+              type="date"
+              value={formData.date}
+              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              className="w-full p-3 border border-sky-300 rounded-xl focus:ring-2 focus:ring-sky-400 focus:border-sky-400 bg-white/50 transition-all"
+              required
+            />
+          </div>
+          {metrics.map(({ key, label }) => (
+            <div key={key}>
+              <label className="block text-sm font-medium text-sky-700 mb-2 capitalize">
+                {label}
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={formData[key]}
+                onChange={(e) =>
+                  setFormData({ ...formData, [key]: Number(e.target.value) || 0 })
+                }
+                className="w-full p-3 border border-sky-300 rounded-xl focus:ring-2 focus:ring-sky-400 focus:border-sky-400 bg-white/50 transition-all"
+                placeholder="0"
+              />
+            </div>
+          ))}
+          <button
+            type="submit"
+            className="col-span-full md:col-span-1 lg:col-span-1 bg-gradient-to-r from-sky-500 to-blue-500 text-white font-bold py-3 px-8 rounded-xl hover:from-sky-600 hover:to-blue-600 shadow-lg transition-all duration-300 md:col-start-1 lg:col-start-auto"
+          >
+            {editingEntry ? 'Atualizar' : 'Adicionar'}
+          </button>
+        </form>
+      </section>
+
+      {/* Histórico e Modal Botão */}
+      <section className="bg-white/60 backdrop-blur-md rounded-2xl p-6 sm:p-8 shadow-lg border border-sky-200">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <h2 className="text-xl sm:text-2xl font-bold text-sky-800">Histórico</h2>
+          <button
+            onClick={openMetasModal}
+            className="bg-sky-500 hover:bg-sky-600 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-300 shadow-md"
+          >
+            ⚙️ Configurar Metas Mensais
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-sky-200">
+                <th className="text-left p-4 font-semibold text-sky-700">Data</th>
+                {metrics.map(({ key, label }) => (
+                  <th key={key} className="text-right p-4 font-semibold text-sky-700">
+                    {label}
+                  </th>
+                ))}
+                <th className="text-right p-4 font-semibold text-sky-700 w-32">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr
+                  key={entry.date}
+                  className="border-b border-sky-100 hover:bg-sky-50 transition-colors duration-200"
+                >
+                  <td className="p-4 font-medium text-sky-800">{formatDate(entry.date)}</td>
+                  {metrics.map(({ key }) => (
+                    <td key={key} className="p-4 text-right text-sky-700">
+                      {entry[key].toLocaleString('pt-BR')}
+                    </td>
+                  ))}
+                  <td className="p-4 text-right">
+                    <button
+                      onClick={() => editEntry(entry)}
+                      className="text-blue-500 hover:text-blue-600 mr-3 font-medium transition-colors"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => deleteEntry(entry.date)}
+                      className="text-red-500 hover:text-red-600 font-medium transition-colors"
+                    >
+                      Deletar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Modal Metas */}
+      {showMetasModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowMetasModal(false);
+            }
+          }}
+        >
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl p-6 sm:p-8 max-w-sm w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-sky-200">
+            <h3 className="text-xl sm:text-2xl font-bold text-sky-800 mb-6 text-center">
+              ⚙️ Configurar Metas Mensais
+            </h3>
+            <form onSubmit={handleMetasSubmit} className="space-y-4">
+              {metrics.map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-sky-700 mb-2">
+                    {label}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={metasForm[key]}
+                    onChange={(e) =>
+                      setMetasForm({ ...metasForm, [key]: Number(e.target.value) || 0 })
+                    }
+                    className="w-full p-3 border border-sky-300 rounded-xl focus:ring-2 focus:ring-sky-400 focus:border-sky-400 bg-white/50 transition-all"
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-3 pt-6">
                 <button
                   type="button"
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    setEditingEntry(null);
-                    setFormData({
-                      date: getToday(),
-                      faturamento: 0,
-                      vendas: 0,
-                      atrasos: 0,
-                      carteiraTotal: 0,
-                      previsaoMesAtual: 0,
-                      previsaoMesSeguinte: 0,
-                    });
-                  }}
+                  onClick={() => setShowMetasModal(false)}
+                  className="flex-1 bg-sky-200 text-sky-800 py-3 rounded-xl hover:bg-sky-300 transition-all font-medium"
                 >
                   Cancelar
                 </button>
-              )}
-            </div>
-          </form>
-        </section>
-
-        {/* Histórico */}
-        <section className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 md:p-8 shadow-2xl">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            📋 Histórico do Mês
-          </h2>
-          {currentMonthEntries.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-500 text-lg">Nenhuma entrada registrada este mês.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="table w-full">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    {METRICS.map((m) => (
-                      <th key={m.key} className="text-center">
-                        {m.emoji}
-                        <br />
-                        <span className="text-xs font-normal">{m.label}</span>
-                      </th>
-                    ))}
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {currentMonthEntries.map((entry) => (
-                    <tr key={entry.date}>
-                      <th>{formatDate(entry.date)}</th>
-                      {METRICS.map((m) => (
-                        <td key={m.key} className="text-right">
-                          {entry[m.key].toLocaleString('pt-BR')}
-                        </td>
-                      ))}
-                      <td>
-                        <div className="flex gap-2">
-                          <button
-                            className="btn btn-sm btn-primary"
-                            onClick={() => editEntry(entry)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="btn btn-sm btn-error"
-                            onClick={() => deleteEntry(entry.date)}
-                          >
-                            Deletar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* FAB for Metas */}
-        <button
-          className="fixed bottom-6 right-6 btn btn-circle btn-primary text-2xl shadow-xl border-0"
-          onClick={() => setShowMetasModal(true)}
-        >
-          ⚙️
-        </button>
-
-        {/* Modal Metas */}
-        {showMetasModal && (
-          <dialog open className="modal modal-open">
-            <div className="modal-box max-w-2xl">
-              <h3 className="font-bold text-lg flex items-center gap-2 mb-6">
-                ⚙️ Configurar Metas Mensais
-              </h3>
-              <form className="space-y-4">
-                {METRICS.map((m) => (
-                  <div key={m.key} className="flex flex-col gap-2">
-                    <label className="label-text font-medium flex items-center gap-2">
-                      {m.emoji} {m.label}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      className="input input-bordered w-full"
-                      value={tempMetas?.[m.key] ?? 0}
-                      onChange={(e) =>
-                        updateTempMeta(m.key, parseFloat(e.target.value) || 0)
-                      }
-                    />
-                  </div>
-                ))}
-                <div className="modal-action gap-2 mt-8">
-                  <button className="btn btn-primary" type="button" onClick={handleSaveMetas}>
-                    Salvar
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    type="button"
-                    onClick={() => setShowMetasModal(false)}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            </div>
-          </dialog>
-        )}
-      </div>
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-sky-500 to-blue-500 text-white py-3 rounded-xl hover:from-sky-600 hover:to-blue-600 shadow-lg transition-all font-bold"
+                >
+                  Salvar Metas
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
