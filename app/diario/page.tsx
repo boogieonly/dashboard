@@ -1,140 +1,72 @@
-'use client';
-
 import { useState, useEffect } from 'react';
-import DailyForm from '../components/DailyForm';
-import DailyTable from '../components/DailyTable';
-import DailyCharts from '../components/DailyCharts';
 
-type DailyData = {
+type DiaryEntry = {
+  id: string;
   date: string;
-  faturamentoAcumulado: number;
-  atrasos: number;
-  vendas: number;
-  carteiraTotal: number;
-  previsaoMesVigente: number;
-  previsaoMesSeguinte: number;
+  content: string;
 };
 
 export default function DiarioPage() {
-  const [dailyData, setDailyData] = useState<DailyData[]>([]);
-  const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [formData, setFormData] = useState<DailyData>({
-    date: '',
-    faturamentoAcumulado: 0,
-    atrasos: 0,
-    vendas: 0,
-    carteiraTotal: 0,
-    previsaoMesVigente: 0,
-    previsaoMesSeguinte: 0,
-  });
+  const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [newContent, setNewContent] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('dailyData');
+    const saved = localStorage.getItem('diary');
     if (saved) {
-      setDailyData(JSON.parse(saved));
+      setEntries(JSON.parse(saved));
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('dailyData', JSON.stringify(dailyData));
-  }, [dailyData]);
+    localStorage.setItem('diary', JSON.stringify(entries));
+  }, [entries]);
 
-  const addData = (newData: DailyData) => {
-    setDailyData((prev) => [...prev, newData]);
-  };
+  const addEntry = () => {
+    if (!newContent.trim()) return;
 
-  const updateData = (updatedData: DailyData) => {
-    setDailyData((prev) =>
-      prev.map((d) => (d.date === updatedData.date ? updatedData : d))
-    );
-  };
+    const entry: DiaryEntry = {
+      id: Date.now().toString(),
+      date: new Date().toLocaleDateString('pt-BR'),
+      content: newContent.trim(),
+    };
 
-  const deleteData = (date: string) => {
-    setDailyData((prev) => prev.filter((d) => d.date !== date));
-    if (editingDate === date) {
-      resetForm();
-    }
-  };
-
-  const handleEdit = (date: string) => {
-    const data = dailyData.find((d) => d.date === date);
-    if (data) {
-      setFormData(data);
-      setEditingDate(date);
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      date: '',
-      faturamentoAcumulado: 0,
-      atrasos: 0,
-      vendas: 0,
-      carteiraTotal: 0,
-      previsaoMesVigente: 0,
-      previsaoMesSeguinte: 0,
-    });
-    setEditingDate(null);
-  };
-
-  const handleSubmit = (data: DailyData) => {
-    if (editingDate) {
-      updateData(data);
-    } else {
-      addData(data);
-    }
-    resetForm();
-  };
-
-  const sortedDailyData = [...dailyData].sort((a, b) =>
-    a.date.localeCompare(b.date)
-  );
-
-  const tableData = {
-    data: sortedDailyData.map((d) => d.date),
-    faturamento: sortedDailyData.map((d) => d.faturamentoAcumulado),
-    atrasos: sortedDailyData.map((d) => d.atrasos),
-    vendas: sortedDailyData.map((d) => d.vendas),
-    carteiraTotal: sortedDailyData.map((d) => d.carteiraTotal),
-    previsaoMesVigente: sortedDailyData.map((d) => d.previsaoMesVigente),
-    previsaoMesSeguinte: sortedDailyData.map((d) => d.previsaoMesSeguinte),
+    setEntries([entry, ...entries]);
+    setNewContent('');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold text-gray-900 mb-12 text-center">
-          Diário Financeiro
-        </h1>
-        <div className="space-y-8">
-          {/* Form Section */}
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">
-              Adicionar/Editar Dados Diários
-            </h2>
-            <DailyForm
-              data={editingDate ? formData : undefined}
-              onSubmit={handleSubmit}
-              onReset={resetForm}
-            />
-          </section>
+    <div className="container mx-auto p-8 max-w-4xl">
+      <h1 className="text-4xl font-bold mb-12 text-center text-gray-800">Meu Diário</h1>
+      
+      <div className="mb-12 p-8 bg-white shadow-lg rounded-xl">
+        <textarea
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          placeholder="O que aconteceu hoje? Escreva sua entrada de diário..."
+          className="w-full p-6 border border-gray-300 rounded-lg resize-vertical min-h-[120px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+          rows={4}
+        />
+        <button
+          onClick={addEntry}
+          className="mt-6 w-full bg-blue-600 text-white py-4 px-8 rounded-lg font-semibold text-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition duration-200"
+        >
+          Adicionar Nova Entrada
+        </button>
+      </div>
 
-          {/* Table Section */}
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">Tabela de Dados</h2>
-            <DailyTable
-              {...tableData}
-              onEdit={handleEdit}
-              onDelete={deleteData}
-            />
-          </section>
-
-          {/* Charts Section */}
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">Gráficos</h2>
-            <DailyCharts {...tableData} />
-          </section>
-        </div>
+      <div className="space-y-6">
+        {entries.length === 0 ? (
+          <p className="text-center text-gray-500 text-xl py-12">Nenhuma entrada ainda. Adicione a primeira!</p>
+        ) : (
+          entries.map((entry) => (
+            <div key={entry.id} className="p-8 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md rounded-xl border-l-4 border-blue-500">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold text-gray-800">{entry.date}</h2>
+              </div>
+              <p className="text-lg leading-relaxed text-gray-700 whitespace-pre-wrap">{entry.content}</p>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
