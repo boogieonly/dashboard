@@ -1,7 +1,8 @@
 'use client';
 
+import React from 'react';
 import {
-  BarChart,
+  BarChart as RechartsBarChart,
   Bar,
   XAxis,
   YAxis,
@@ -11,43 +12,77 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-type BarChartData = {
+interface BarChartData {
   name: string;
-  sales: number;
-  expenses: number;
-};
+  [key: string]: number | string;
+}
 
-type BarChartProps = {
-  data?: BarChartData[];
-  colors?: string[];
+interface BarChartProps {
+  data: BarChartData[];
+  dataKeys: string[];
   height?: number;
-};
+}
 
-const defaultData: BarChartData[] = [
-  { name: 'Jan', sales: 400, expenses: 240 },
-  { name: 'Feb', sales: 300, expenses: 139 },
-  { name: 'Mar', sales: 200, expenses: 380 },
-  { name: 'Apr', sales: 278, expenses: 390 },
-  { name: 'May', sales: 189, expenses: 480 },
-  { name: 'Jun', sales: 239, expenses: 380 },
-];
-
-const BarChartComponent = ({
-  data = defaultData,
-  colors = ['#8884d8', '#82ca9d'],
+const BarChartComponent: React.FC<BarChartProps> = ({
+  data,
+  dataKeys,
   height = 300,
-}: BarChartProps) => (
+}) => (
   <ResponsiveContainer width="100%" height={height}>
-    <BarChart data={data}>
+    <RechartsBarChart data={data}>
       <CartesianGrid strokeDasharray="3 3" />
       <XAxis dataKey="name" />
       <YAxis />
       <Tooltip />
       <Legend />
-      <Bar dataKey="sales" fill={colors[0]} name="Sales" />
-      <Bar dataKey="expenses" fill={colors[1]} name="Expenses" />
-    </BarChart>
+      {dataKeys.map((dataKey, index) => (
+        <Bar
+          key={dataKey}
+          dataKey={dataKey}
+          fill={`hsl(${(index * 360) / dataKeys.length}, 70%, 50%)`}
+        />
+      ))}
+    </RechartsBarChart>
   </ResponsiveContainer>
 );
+
+export const exampleData: BarChartData[] = [
+  {
+    name: 'January',
+    apples: 4000,
+    oranges: 2400,
+    bananas: 2400,
+  },
+  {
+    name: 'February',
+    apples: 3000,
+    oranges: 1398,
+    bananas: 2210,
+  },
+  {
+    name: 'March',
+    apples: 2000,
+    oranges: 9800,
+    bananas: 2290,
+  },
+  {
+    name: 'April',
+    apples: 2780,
+    oranges: 3908,
+    bananas: 2000,
+  },
+  {
+    name: 'May',
+    apples: 1890,
+    oranges: 4800,
+    bananas: 2181,
+  },
+  {
+    name: 'June',
+    apples: 2390,
+    oranges: 3800,
+    bananas: 2500,
+  },
+];
 
 export default BarChartComponent;
