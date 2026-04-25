@@ -1,10 +1,14 @@
-'use client';
-
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
 
-type DailyEntry = {
+interface Metric {
+  key: MetricKey;
+  label: string;
+  unit: string;
+}
+
+interface Day {
   date: string;
   faturamento: number;
   vendas: number;
@@ -12,480 +16,321 @@ type DailyEntry = {
   carteira: number;
   previsaoAtual: number;
   previsaoProx: number;
-};
-
-type Metas = Record<MetricKey, number>;
-
-type FormDataType = {
-  date: string;
-} & Record<MetricKey, number>;
-
-type Metric = {
-  key: MetricKey;
-  label: string;
-  unit: string;
-  color: string;
-};
+}
 
 const METRICS: Metric[] = [
-  { key: 'faturamento', label: 'Faturamento', unit: 'R$', color: 'from-blue-500 to-blue-600' },
-  { key: 'vendas', label: 'Vendas', unit: 'unid', color: 'from-green-500 to-green-600' },
-  { key: 'atrasos', label: 'Atrasos', unit: 'dias', color: 'from-orange-500 to-orange-600' },
-  { key: 'carteira', label: 'Carteira Total', unit: 'R$', color: 'from-purple-500 to-purple-600' },
-  { key: 'previsaoAtual', label: 'Previsão Mês Atual', unit: 'R$', color: 'from-indigo-500 to-indigo-600' },
-  { key: 'previsaoProx', label: 'Previsão Mês Seguinte', unit: 'R$', color: 'from-pink-500 to-pink-600' },
+  { key: 'faturamento', label: 'Faturamento', unit: 'R$' },
+  { key: 'vendas', label: 'Vendas', unit: 'R$' },
+  { key: 'atrasos', label: 'Atrasos', unit: 'R$' },
+  { key: 'carteira', label: 'Carteira', unit: 'R$' },
+  { key: 'previsaoAtual', label: 'Previsão Atual', unit: 'R$' },
+  { key: 'previsaoProx', label: 'Previsão Próxima', unit: 'R$' },
 ];
 
-const defaultMetas: Metas = {
-  faturamento: 100000,
-  vendas: 1000,
-  atrasos: 0,
-  carteira: 50000,
-  previsaoAtual: 120000,
-  previsaoProx: 150000,
+const formatNumber = (value: number): string => {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value);
 };
 
-const defaultFormData: FormDataType = {
-  date: '',
-  faturamento: 0,
-  vendas: 0,
-  atrasos: 0,
-  carteira: 0,
-  previsaoAtual: 0,
-  previsaoProx: 0,
-};
-
-const icons = ['💰', '📦', '⚠️', '💳', '🔮', '📅'];
-
-const firstAccumKeys: MetricKey[] = ['faturamento', 'vendas', 'atrasos'];
-
-function getToday(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getMonthStart(): string {
-  const now = new Date();
-  now.setDate(1);
-  return now.toISOString().split('T')[0];
-}
-
-function sameMonth(date1: string, date2: string): boolean {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
-}
-
-function computeAccum(entries: DailyEntry[], field: MetricKey, upToDate: string): number {
-  return entries
-    .filter(entry => sameMonth(entry.date, upToDate) && entry.date <= upToDate)
-    .reduce((sum, entry) => sum + (entry[field] || 0), 0);
-}
-
-function getLastSnapshotValue(entries: DailyEntry[], field: MetricKey): number {
-  const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  return sorted[0]?.[field] || 0;
-}
-
-function getLast7Accum(entries: DailyEntry[], field: MetricKey, upToDate: string): number[] {
-  const today = new Date(upToDate);
-  const last7: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const accum = computeAccum(entries, field, dateStr);
-    last7.unshift(accum);
+const Sparkline = ({
+  data,
+  className = '',
+}: {
+  data: number[];
+  className?: string;
+}) => {
+  if (data.length === 0) {
+    return <div className={`h-6 bg-gray-300/50 rounded-full ${className}`} />;
   }
-  return last7;
-}
 
-function getLast7Snapshots(entries: DailyEntry[], field: MetricKey, upToDate: string): number[] {
-  const today = new Date(upToDate);
-  const last7: number[] = [];
-  for (let i = 0; i < 7; i++) {
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() - i);
-    const dateStr = targetDate.toISOString().split('T')[0];
-    const candidates = entries.filter(e => e.date <= dateStr).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    const val = candidates[0]?.[field] || 0;
-    last7.unshift(val);
-  }
-  return last7;
-}
-
-function Sparkline({ data }: { data: number[] }) {
-  if (!data.length) {
-    return <div className="h-5 bg-white/10 rounded-full" />;
-  }
-  const max = Math.max(...data, 1);
-  const points = data.map((val, idx) => {
-    const x = (idx / (data.length - 1)) * 100;
-    const y = 20 - (val / max) * 18;
+  const minV = Math.min(...data);
+  const maxV = Math.max(...data);
+  const padding = 2;
+  const height = 20;
+  const range = maxV - minV || 1;
+  const normalize = (v: number) =>
+    height - padding - ((v - minV) / range) * (height - 2 * padding);
+  const widthPerPoint = 100 / Math.max(1, data.length - 1);
+  const points: string[] = data.map((v, i) => {
+    const x = i * widthPerPoint;
+    const y = normalize(v);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
+  });
+
   return (
-    <svg viewBox="0 0 100 20" className="w-full h-5 flex-shrink-0">
-      <polyline
-        points={points}
-        stroke="rgba(255, 255, 255, 0.9)"
-        strokeWidth="2.5"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="drop-shadow-lg"
-      />
+    <svg
+      className={`w-full h-6 ${className}`}
+      viewBox="0 0 100 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points={points.join(' ')} />
     </svg>
   );
-}
+};
 
-export default function DiarioPage() {
-  const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [metas, setMetas] = useState<Metas>(defaultMetas);
-  const [formData, setFormData] = useState<FormDataType>(defaultFormData);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showMetasModal, setShowMetasModal] = useState(false);
-  const today = getToday();
+export default function Diario() {
+  const [data, setData] = useState<Day[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Partial<Record<MetricKey, number>>>({});
+
+  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
-    const savedEntries = localStorage.getItem('diario-entries');
-    if (savedEntries) {
-      setEntries(JSON.parse(savedEntries));
-    }
-    const savedMetas = localStorage.getItem('diario-metas');
-    if (savedMetas) {
-      setMetas(JSON.parse(savedMetas));
+    try {
+      const stored = localStorage.getItem('diarioData');
+      if (stored) {
+        setData(JSON.parse(stored));
+      }
+    } catch {
+      // ignore
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('diario-entries', JSON.stringify(entries));
-  }, [entries]);
+    localStorage.setItem('diarioData', JSON.stringify(data));
+  }, [data]);
 
-  useEffect(() => {
-    localStorage.setItem('diario-metas', JSON.stringify(metas));
-  }, [metas]);
+  const getDayValue = (dateStr: string, key: MetricKey): number => {
+    return (data.find((d) => d.date === dateStr)?.[key] as number) ?? 0;
+  };
 
-  const currentAccum = useMemo(() => ({
-    faturamento: computeAccum(entries, 'faturamento', today),
-    vendas: computeAccum(entries, 'vendas', today),
-    atrasos: computeAccum(entries, 'atrasos', today),
-    carteira: getLastSnapshotValue(entries, 'carteira'),
-    previsaoAtual: getLastSnapshotValue(entries, 'previsaoAtual'),
-    previsaoProx: getLastSnapshotValue(entries, 'previsaoProx'),
-  }), [entries, today]);
+  const getHistory = (key: MetricKey, count = 30): number[] => {
+    return data.slice(0, count).map((d) => d[key] as number);
+  };
 
-  const sparklineData = useMemo(() =>
-    METRICS.map((metric) =>
-      firstAccumKeys.includes(metric.key as MetricKey)
-        ? getLast7Accum(entries, metric.key as MetricKey, today)
-        : getLast7Snapshots(entries, metric.key as MetricKey, today)
-    ),
-    [entries, today]
-  );
+  const getYesterday = (): string => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  };
 
-  const handleSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const entryDate = formData.date || getToday();
-    const newEntry: DailyEntry = {
-      ...formData,
-    };
-    if (editingId) {
-      setEntries((prev) => prev.map((e) => (e.date === editingId ? newEntry : e)));
-      setEditingId(null);
+  const openModal = (date: string) => {
+    setEditingDate(date);
+    const dayData = data.find((d) => d.date === date);
+    if (dayData) {
+      const fd: Record<MetricKey, number> = {} as Record<MetricKey, number>;
+      METRICS.forEach((m) => {
+        fd[m.key] = dayData[m.key];
+      });
+      setFormData(fd);
     } else {
-      setEntries((prev) => [...prev, newEntry]);
+      setFormData({});
     }
-    setFormData(defaultFormData);
-  }, [formData, editingId]);
-
-  const handleEdit = useCallback((entry: DailyEntry) => {
-    setFormData({
-      date: entry.date,
-      faturamento: entry.faturamento,
-      vendas: entry.vendas,
-      atrasos: entry.atrasos,
-      carteira: entry.carteira,
-      previsaoAtual: entry.previsaoAtual,
-      previsaoProx: entry.previsaoProx,
-    });
-    setEditingId(entry.date);
-  }, []);
-
-  const handleDelete = useCallback((date: string) => {
-    setEntries((prev) => prev.filter((e) => e.date !== date));
-  }, []);
-
-  const handleMetaChange = useCallback((key: MetricKey, value: string) => {
-    setMetas((prev) => ({ ...prev, [key]: parseFloat(value) || 0 }));
-  }, []);
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString('pt-BR');
+    setIsModalOpen(true);
   };
 
-  const formatNumber = (num: number, unit: string): string => {
-    if (unit === 'R$') {
-      return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
-    }
-    return num.toLocaleString('pt-BR') + (unit ? ` ${unit}` : '');
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingDate(null);
+    setFormData({});
   };
 
-  const getProgress = (accum: number, meta: number): number => {
-    return Math.min((accum / meta) * 100, 100);
+  const handleFormChange = (key: MetricKey, value: number) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDate) return;
+
+    const newDay: Day = {
+      date: editingDate,
+      faturamento: formData.faturamento ?? 0,
+      vendas: formData.vendas ?? 0,
+      atrasos: formData.atrasos ?? 0,
+      carteira: formData.carteira ?? 0,
+      previsaoAtual: formData.previsaoAtual ?? 0,
+      previsaoProx: formData.previsaoProx ?? 0,
+    };
+
+    const newData = data.map((d) => (d.date === editingDate ? newDay : d));
+    if (!data.some((d) => d.date === editingDate)) {
+      newData.push(newDay);
+    }
+    newData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setData(newData);
+    closeModal();
+  };
+
+  const deleteDay = (date: string) => {
+    if (!confirm('Tem certeza que deseja excluir este dia?')) return;
+    setData(data.filter((d) => d.date !== date));
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 md:p-12">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-800 p-8 font-sans">
       <div className="max-w-7xl mx-auto">
-        <header className="text-center mb-12">
-          <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent mb-4 animate-pulse">
-            📊 Diário Financeiro
-          </h1>
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-            Acompanhe seus KPIs diários com precisão e defina metas mensais.
-          </p>
-        </header>
+        <h1 className="text-5xl font-bold bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent mb-12 text-center">
+          Diário Financeiro
+        </h1>
 
-        {/* Seção 1 - KPI Cards */}
-        <section className="mb-16">
-          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">
-            📈 KPIs do Mês (Acumulado até {formatDate(today)})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {METRICS.map((metric, idx) => {
-              const key = metric.key as MetricKey;
-              const accum = currentAccum[key];
-              const prog = getProgress(accum, metas[key]);
-              return (
-                <div
-                  key={metric.key}
-                  className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-purple-500/25 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02]"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent rounded-3xl" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className={`w-12 h-12 rounded-2xl bg-gradient-to-r ${metric.color} flex items-center justify-center shadow-lg shadow-black/30`}>
-                        {icons[idx]}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowMetasModal(true)}
-                        className="text-xl hover:scale-110 transition-all duration-200 hover:text-white text-slate-400"
-                        title="Configurar Metas"
-                      >
-                        ⚙️
-                      </button>
-                    </div>
-                    <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-slate-200 transition-colors">
-                      {metric.label}
-                    </h3>
-                    <div className="text-4xl md:text-5xl font-black bg-gradient-to-r from-white via-slate-200 to-slate-300 bg-clip-text text-transparent mb-4 leading-tight">
-                      {formatNumber(accum, metric.unit)}
-                    </div>
-                    <div className="h-5 mb-4">
-                      <Sparkline data={sparklineData[idx]} />
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-400">Meta: {formatNumber(metas[key], metric.unit)}</span>
-                      <div className="w-20 bg-white/10 rounded-full h-3 overflow-hidden border border-white/20">
-                        <div
-                          className={`h-full bg-gradient-to-r ${metric.color} rounded-full transition-all duration-1000 ease-out shadow-inner`}
-                          style={{ width: `${prog}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        <div className="flex flex-col sm:flex-row gap-4 mb-12 justify-center">
+          <button
+            onClick={() => openModal(today)}
+            className="px-8 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl text-white font-medium hover:bg-white/20 transition-all shadow-2xl hover:shadow-3xl"
+          >
+            📊 Registrar Hoje
+          </button>
+        </div>
 
-        {/* Formulário */}
-        <section className="mb-16">
-          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">
-            {editingId ? '✏️ Editar Registro' : '➕ Novo Registro Diário'}
-          </h2>
-          <form onSubmit={handleSubmit} className="max-w-2xl mx-auto bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-6">
-              <div>
-                <label className="block text-slate-300 mb-2 font-medium">Data *</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all shadow-lg"
-                  required
-                />
-              </div>
-              {METRICS.map((metric) => {
-                const key = metric.key as MetricKey;
-                return (
-                  <div key={metric.key}>
-                    <label className="block text-slate-300 mb-2 font-medium">{metric.label}</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={formData[key]}
-                      onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
-                      className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all shadow-lg"
-                      placeholder="0"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                type="submit"
-                className="px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-2xl shadow-2xl hover:shadow-blue-500/50 hover:scale-105 transition-all duration-300 flex-1 sm:w-auto"
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-16">
+          {METRICS.map((metric) => {
+            const value = getDayValue(today, metric.key);
+            const yestDate = getYesterday();
+            const prevValue = getDayValue(yestDate, metric.key);
+            const change =
+              prevValue === 0 ? 0 : ((value - prevValue) / prevValue) * 100;
+            const history = getHistory(metric.key);
+
+            return (
+              <div
+                key={metric.key}
+                className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all hover:-translate-y-2 hover:bg-white/20"
               >
-                {editingId ? 'Atualizar Registro' : 'Salvar Registro'}
-              </button>
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData(defaultFormData);
-                    setEditingId(null);
-                  }}
-                  className="px-8 py-4 bg-slate-600/50 hover:bg-slate-500/50 text-slate-300 font-bold rounded-2xl shadow-xl transition-all duration-300 flex-1 sm:w-auto border border-slate-400/30"
+                <h3 className="text-sm font-semibold text-gray-300 mb-2 uppercase tracking-wide">
+                  {metric.label}
+                </h3>
+                <div className="text-4xl lg:text-3xl font-black text-white mb-4">
+                  {formatNumber(value)}
+                </div>
+                <div
+                  className={`text-lg font-bold ${
+                    change >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  } mb-6`}
                 >
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </form>
-        </section>
+                  {change >= 0 ? '↑' : '↓'} {Math.abs(change).toFixed(1)}% vs ontem
+                </div>
+                <Sparkline
+                  data={history}
+                  className="text-blue-400/80 group-hover:text-blue-300"
+                />
+                <div className="text-xs text-gray-400 mt-3 font-medium">
+                  {metric.unit}
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
-        {/* Histórico */}
-        <section>
-          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">📜 Histórico do Mês</h2>
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-x-auto">
-            <table className="w-full text-sm text-slate-300 min-w-max">
-              <thead>
-                <tr className="border-b border-white/20">
-                  <th className="text-left p-4 font-bold text-white">Data</th>
-                  {METRICS.map((metric) => (
-                    <th key={metric.key} className="px-4 py-4 text-center font-bold text-white">
-                      {metric.label}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
+          <h2 className="text-3xl font-bold text-white mb-8">Histórico</h2>
+          {data.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              Nenhum dado registrado ainda. Clique em &quot;Registrar Hoje&quot; para começar.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/20">
+                    <th className="p-4 text-left text-gray-300 font-semibold sticky top-0 bg-white/10 backdrop-blur-sm z-10">
+                      Data
                     </th>
-                  ))}
-                  <th className="text-right p-4 font-bold text-white pr-8">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries
-                  .filter((e) => sameMonth(e.date, today))
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((entry) => (
-                    <tr key={entry.date} className="hover:bg-white/10 transition-colors border-b border-white/10 last:border-b-0">
-                      <td className="p-4 font-semibold text-white pl-0">{formatDate(entry.date)}</td>
-                      {METRICS.map((metric) => {
-                        const key = metric.key as MetricKey;
-                        return (
-                          <td key={metric.key} className="px-4 py-4 text-center font-mono">
-                            {formatNumber(entry[key], metric.unit)}
-                          </td>
-                        );
-                      })}
-                      <td className="p-4 text-right pr-8 space-x-2">
+                    {METRICS.map((m) => (
+                      <th
+                        key={m.key}
+                        className="p-4 text-left text-gray-300 font-semibold sticky top-0 bg-white/10 backdrop-blur-sm z-10"
+                      >
+                        {m.label}
+                      </th>
+                    ))}
+                    <th className="p-4 text-left text-gray-300 font-semibold sticky top-0 bg-white/10 backdrop-blur-sm z-10">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.slice(0, 100).map((day) => (
+                    <tr
+                      key={day.date}
+                      className="border-b border-white/10 hover:bg-white/10 transition-colors"
+                    >
+                      <td className="p-4 font-medium text-white">
+                        {new Date(day.date).toLocaleDateString('pt-BR')}
+                      </td>
+                      {METRICS.map((m) => (
+                        <td key={m.key} className="p-4 text-gray-200">
+                          {formatNumber(day[m.key])}
+                        </td>
+                      ))}
+                      <td className="p-4">
                         <button
-                          type="button"
-                          onClick={() => handleEdit(entry)}
-                          className="px-4 py-2 bg-blue-500/80 hover:bg-blue-400 text-white rounded-xl shadow-lg hover:shadow-blue-400/50 transition-all duration-200 text-sm font-medium"
+                          onClick={() => openModal(day.date)}
+                          className="text-blue-400 hover:text-blue-300 mr-4 text-xs font-medium transition-colors"
                         >
                           Editar
                         </button>
                         <button
-                          type="button"
-                          onClick={() => handleDelete(entry.date)}
-                          className="px-4 py-2 bg-red-500/80 hover:bg-red-400 text-white rounded-xl shadow-lg hover:shadow-red-400/50 transition-all duration-200 text-sm font-medium"
+                          onClick={() => deleteDay(day.date)}
+                          className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors"
                         >
-                          Deletar
+                          Excluir
                         </button>
                       </td>
                     </tr>
                   ))}
-                {entries.filter((e) => sameMonth(e.date, today)).length === 0 && (
-                  <tr>
-                    <td colSpan={METRICS.length + 2} className="p-12 text-center text-slate-400 font-medium">
-                      Nenhum registro este mês. Adicione o primeiro!
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Modal Metas */}
-      {showMetasModal && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50"
-          onClick={() => setShowMetasModal(false)}
-        >
-          <div
-            className="bg-white/20 backdrop-blur-2xl border border-white/40 rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-3xl hover:shadow-4xl transition-all duration-300 relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-3xl font-bold text-white">⚙️ Configurar Metas Mensais</h3>
-              <button
-                type="button"
-                onClick={() => setShowMetasModal(false)}
-                className="text-3xl hover:scale-110 transition-transform text-slate-400 hover:text-white ml-4"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {METRICS.map((metric) => {
-                const key = metric.key as MetricKey;
-                return (
-                  <div key={metric.key} className="space-y-2">
-                    <label className="block text-slate-300 font-semibold text-lg">{metric.label}</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={metas[key]}
-                      onChange={(e) => handleMetaChange(key, e.target.value)}
-                      className="w-full px-6 py-4 bg-white/30 border border-white/50 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-white/30 transition-all text-xl font-mono tracking-wider shadow-xl hover:shadow-2xl hover:border-white/70"
-                      placeholder="Defina a meta..."
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-12 pt-8 border-t border-white/20 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowMetasModal(false)}
-                className="px-12 py-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold rounded-3xl shadow-2xl hover:shadow-emerald-500/50 hover:scale-105 transition-all duration-300 text-xl tracking-wide"
-              >
-                ✅ Metas Salvas!
-              </button>
-            </div>
+      {isModalOpen && editingDate && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white/10 backdrop-blur-3xl border border-white/20 rounded-4xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-3xl">
+            <h2 className="text-3xl font-bold text-white mb-8">
+              {editingDate === today
+                ? 'Registrar Hoje'
+                : `Editar ${new Date(editingDate).toLocaleDateString('pt-BR')}`}
+            </h2>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {METRICS.map((metric) => (
+                <div key={metric.key} className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-200">
+                    {metric.label}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData[metric.key]?.toString() ?? ''}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      handleFormChange(metric.key, val);
+                    }}
+                    className="w-full p-4 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-lg font-mono"
+                    placeholder="0,00"
+                  />
+                  <div className="text-xs text-gray-500">{metric.unit}</div>
+                </div>
+              ))}
+              <div className="md:col-span-2 lg:col-span-3 pt-4 border-t border-white/20 flex gap-4 mt-8">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 p-4 bg-gray-500/30 border border-gray-400/30 rounded-2xl text-white font-semibold hover:bg-gray-500/50 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 p-4 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl text-white font-bold shadow-lg hover:shadow-2xl hover:from-blue-600 hover:to-indigo-700 transition-all"
+                >
+                  Salvar Dados
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(30px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-        }
-      `}</style>
     </div>
   );
 }
