@@ -1,7 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
-import { DailyForm, DailyTable, DailyCharts } from '../components/';
+import { useState, useEffect } from 'react';
+import DailyForm from '../components/DailyForm';
+import DailyTable from '../components/DailyTable';
+import DailyCharts from '../components/DailyCharts';
 
 interface DailyEntry {
   date: string;
@@ -13,7 +15,7 @@ interface DailyEntry {
   previsaoMesSeguinte: number;
 }
 
-const Diario = () => {
+export default function DiarioPage() {
   const [dailyData, setDailyData] = useState<DailyEntry[]>([]);
   const [editingDate, setEditingDate] = useState<string | null>(null);
   const [formData, setFormData] = useState<DailyEntry>({
@@ -27,31 +29,22 @@ const Diario = () => {
   });
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('dailyData');
-      if (saved) {
-        setDailyData(JSON.parse(saved));
-      }
+    const saved = localStorage.getItem('dailyData');
+    if (saved) {
+      setDailyData(JSON.parse(saved));
     }
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('dailyData', JSON.stringify(dailyData));
-    }
+    localStorage.setItem('dailyData', JSON.stringify(dailyData));
   }, [dailyData]);
 
-  const sortData = (data: DailyEntry[]): DailyEntry[] =>
-    [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  const handleFormChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: name === 'date' ? value : Number(value) || 0,
-    }));
+  const handleEdit = (date: string) => {
+    const entry = dailyData.find((d) => d.date === date);
+    if (entry) {
+      setFormData(entry);
+      setEditingDate(date);
+    }
   };
 
   const resetForm = () => {
@@ -67,63 +60,68 @@ const Diario = () => {
     setEditingDate(null);
   };
 
-  const handleEdit = (date: string) => {
-    const entry = dailyData.find((d) => d.date === date);
-    if (entry) {
-      setFormData(entry);
-      setEditingDate(date);
-    }
-  };
-
-  const addData = () => {
-    if (!formData.date.trim()) return;
-    const newEntry: DailyEntry = { ...formData };
-    setDailyData((prev) => sortData([...prev, newEntry]));
-    resetForm();
-  };
-
-  const updateData = () => {
-    if (!editingDate || !formData.date.trim()) return;
-    const updatedEntry: DailyEntry = { ...formData };
-    setDailyData((prev) =>
-      sortData(prev.map((d) => (d.date === editingDate ? updatedEntry : d)))
-    );
-    resetForm();
-  };
-
-  const deleteData = (dateToDelete: string) => {
-    setDailyData((prev) => sortData(prev.filter((d) => d.date !== dateToDelete)));
-  };
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleSubmit = (data: DailyEntry) => {
     if (editingDate) {
-      updateData();
+      setDailyData((prev) =>
+        prev.map((d) => (d.date === editingDate ? data : d))
+      );
     } else {
-      addData();
+      setDailyData((prev) => [...prev, data]);
     }
+    resetForm();
+  };
+
+  const deleteData = (date: string) => {
+    setDailyData((prev) => prev.filter((d) => d.date !== date));
   };
 
   return (
-    <div className="container mx-auto p-8 space-y-8">
-      <h1 className="text-4xl font-bold text-center text-gray-800 mb-12">
-        Fechamento Diário
-      </h1>
-      <DailyForm
-        formData={formData}
-        onChange={handleFormChange}
-        onSubmit={handleSubmit}
-        onReset={resetForm}
-        editingDate={editingDate}
-      />
-      <DailyTable
-        data={dailyData}
-        onEdit={handleEdit}
-        onDelete={deleteData}
-      />
-      <DailyCharts data={dailyData} />
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-4xl font-bold text-gray-900 mb-12 text-center">
+          Fechamento Diário
+        </h1>
+        <div className="space-y-8">
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Adicionar/Editar Dados</h2>
+            <DailyForm
+              data={editingDate ? formData : undefined}
+              onSubmit={handleSubmit}
+              onReset={resetForm}
+            />
+          </section>
+
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Tabela de Dados</h2>
+            <DailyTable
+              data={dailyData.map((d) => d.date)}
+              faturamento={dailyData.map((d) => d.faturamento)}
+              atrasos={dailyData.map((d) => d.atrasos)}
+              vendas={dailyData.map((d) => d.vendas)}
+              carteiraTotal={dailyData.map((d) => d.carteiraTotal)}
+              previsaoMesVigente={dailyData.map((d) => d.previsaoMesVigente)}
+              previsaoMesSeguinte={dailyData.map((d) => d.previsaoMesSeguinte)}
+              onEdit={handleEdit}
+              onDelete={deleteData}
+            />
+          </section>
+
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Gráficos</h2>
+            <DailyCharts
+              data={dailyData.map((d) => ({
+                date: d.date,
+                faturamento: d.faturamento,
+                atrasos: d.atrasos,
+                vendas: d.vendas,
+                carteiraTotal: d.carteiraTotal,
+                previsaoMesVigente: d.previsaoMesVigente,
+                previsaoMesSeguinte: d.previsaoMesSeguinte,
+              }))}
+            />
+          </section>
+        </div>
+      </div>
     </div>
   );
-};
-
-export default Diario;
+}
