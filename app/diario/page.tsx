@@ -15,15 +15,29 @@ interface DailyEntry {
   previsaoMesSeguinte: number;
 }
 
+const initialFormData: DailyEntry = {
+  date: '',
+  faturamento: 0,
+  atrasos: 0,
+  vendas: 0,
+  carteiraTotal: 0,
+  previsaoMesVigente: 0,
+  previsaoMesSeguinte: 0,
+};
+
 export default function DiarioPage() {
   const [dailyData, setDailyData] = useState<DailyEntry[]>([]);
   const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<DailyEntry>>({});
+  const [formData, setFormData] = useState<DailyEntry>(initialFormData);
 
   useEffect(() => {
     const saved = localStorage.getItem('dailyData');
     if (saved) {
-      setDailyData(JSON.parse(saved));
+      try {
+        setDailyData(JSON.parse(saved));
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      }
     }
   }, []);
 
@@ -40,51 +54,54 @@ export default function DiarioPage() {
   };
 
   const resetForm = () => {
+    setFormData(initialFormData);
     setEditingDate(null);
-    setFormData({});
   };
 
   const handleSubmit = (data: DailyEntry) => {
-    let newData = [...dailyData];
     if (editingDate) {
-      newData = newData.map((d) => (d.date === editingDate ? data : d));
+      setDailyData((prev) =>
+        prev.map((d) => (d.date === editingDate ? data : d))
+      );
     } else {
-      newData.push(data);
+      setDailyData((prev) => [...prev, data]);
     }
-    newData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    setDailyData(newData);
     resetForm();
   };
 
   const deleteData = (date: string) => {
-    setDailyData((prev) => {
-      const newData = prev.filter((d) => d.date !== date);
-      newData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      return newData;
-    });
+    setDailyData((prev) => prev.filter((d) => d.date !== date));
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900">Diário Financeiro</h1>
-          <p className="mt-4 text-xl text-gray-600">Registre e acompanhe seus dados diários</p>
-        </div>
+        <h1 className="text-4xl font-bold text-gray-900 mb-12 text-center">
+          Fechamento Diário
+        </h1>
         <div className="space-y-8">
-          <DailyForm
-            data={editingDate ? formData : undefined}
-            onSubmit={handleSubmit}
-            onReset={resetForm}
-          />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Adicionar/Editar Dados</h2>
+            <DailyForm
+              data={editingDate ? formData : undefined}
+              onSubmit={handleSubmit}
+              onReset={resetForm}
+            />
+          </section>
+
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Tabela de Dados</h2>
             <DailyTable
               data={dailyData}
               onEdit={handleEdit}
               onDelete={deleteData}
             />
+          </section>
+
+          <section className="bg-white shadow-xl rounded-lg p-8">
+            <h2 className="text-2xl font-semibold mb-6">Gráficos</h2>
             <DailyCharts data={dailyData} />
-          </div>
+          </section>
         </div>
       </div>
     </div>
