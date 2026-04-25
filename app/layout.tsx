@@ -1,49 +1,29 @@
-"use client";
+import type { Metadata } from 'next'
+import { ReactNode } from 'react'
 
-import { ReactNode } from 'react';
-import Link from 'next/link';
+import './globals.css'
+import Header from './components/Header'
+import Sidebar from './components/Sidebar'
 
-export default function RootLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export const metadata: Metadata = {
+  title: 'My App',
+  description: 'A Next.js app with Header and Sidebar layout',
+}
+
+interface RootLayoutProps {
+  children: ReactNode
+}
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="pt-BR">
-      <body className="bg-[radial-gradient(circle_at_50%_20%,indigo-900_0%,purple-900_40%,indigo-950_100%)] min-h-screen antialiased">
-        <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-black/30 border-b border-white/20 shadow-2xl">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16 md:h-20">
-              <div className="text-2xl md:text-3xl font-bold text-white drop-shadow-lg">
-                Metalfama 🏭
-              </div>
-              <div className="hidden md:flex items-center space-x-8">
-                <Link
-                  href="/"
-                  className="text-white/90 hover:text-indigo-300 font-medium transition-all duration-300 hover:scale-105"
-                >
-                  Visão Geral
-                </Link>
-                <Link
-                  href="/diario"
-                  className="text-white/90 hover:text-indigo-300 font-medium transition-all duration-300 hover:scale-105"
-                >
-                  Fechamento Diário
-                </Link>
-                <Link
-                  href="/mensal"
-                  className="text-white/90 hover:text-indigo-300 font-medium transition-all duration-300 hover:scale-105"
-                >
-                  Fechamento Mensal
-                </Link>
-              </div>
-            </div>
-          </div>
-        </nav>
-        <main className="pt-20 md:pt-24 px-4 sm:px-6 lg:px-8 pb-8">
+      <body className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen antialiased">
+        <Header />
+        <Sidebar />
+        <main className="ml-64 pt-20 p-6">
           {children}
         </main>
       </body>
     </html>
-  );
+  )
 }
