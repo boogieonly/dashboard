@@ -1,35 +1,83 @@
-'use client';
+import Header from './components/Header';
+import Sidebar from './components/Sidebar';
+import KPICard from './components/KPICard';
+import MaterialCard from './components/MaterialCard';
+import FilterSection from './components/FilterSection';
+import BarChartComponent from './components/BarChartComponent';
+import PieChartComponent from './components/PieChartComponent';
 
-import React from 'react';
-
-interface KPICardProps {
-  title: string;
-  value: string;
-  emoji: string;
-  gradient: string;
-}
-
-const KPICard: React.FC<KPICardProps> = ({ title, value, emoji, gradient }) => {
+export default function DashboardPage() {
   return (
-    <div className={`group relative overflow-hidden rounded-3xl p-6 md:p-8 bg-white/10 backdrop-blur-3xl border border-white/20 shadow-2xl hover:shadow-[0_0_4rem_rgba(255,255,255,0.3)] hover:scale-105 transition-all duration-500 ease-out text-white text-center max-w-sm w-full mx-auto`}>
-      {/* Dynamic gradient background layer */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-60 blur-sm -z-10 animate-pulse`} />
-      <div className="relative z-10 flex flex-col items-center justify-center space-y-4 min-h-[200px] md:min-h-[220px]">
-        {/* Large emoji with glow */}
-        <div className="text-5xl md:text-6xl drop-shadow-[0_25px_25px_rgba(0,0,0,0.3)] group-hover:drop-shadow-[0_0_2rem_rgba(255,255,255,0.6)] transition-all duration-500 mb-2 md:mb-4">
-          {emoji}
-        </div>
-        {/* Value */}
-        <div className="text-3xl md:text-4xl lg:text-5xl font-black drop-shadow-2xl leading-tight tracking-tight">
-          {value}
-        </div>
-        {/* Title */}
-        <div className="text-lg md:text-xl font-semibold opacity-90 drop-shadow-sm tracking-wide uppercase">
-          {title}
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-hidden">
+      <Header />
+      <div className="flex">
+        <Sidebar />
+        <main className="flex-1 p-6 md:p-8 lg:p-12 overflow-auto">
+          {/* Title Section */}
+          <section className="mb-16 text-center md:text-left">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-2xl animate-pulse [text-shadow:0_0_1rem_rgba(168,85,247,0.5)]">
+              Premium Dashboard
+            </h1>
+            <p className="mt-4 text-xl text-slate-400 drop-shadow-lg">Advanced analytics and insights</p>
+          </section>
+
+          {/* KPI Cards */}
+          <section className="mb-16">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <KPICard 
+                title="Total Products" 
+                value="1,234" 
+                emoji="📦" 
+                gradient="from-blue-500 to-indigo-600" 
+              />
+              <KPICard 
+                title="Revenue" 
+                value="$45,678" 
+                emoji="💰" 
+                gradient="from-emerald-500 to-teal-600" 
+              />
+              <KPICard 
+                title="Orders" 
+                value="567" 
+                emoji="📊" 
+                gradient="from-purple-500 to-pink-600" 
+              />
+              <KPICard 
+                title="Growth" 
+                value="+12%" 
+                emoji="📈" 
+                gradient="from-orange-500 to-red-600" 
+              />
+            </div>
+          </section>
+
+          {/* Filter Section */}
+          <section className="mb-16">
+            <FilterSection />
+          </section>
+
+          {/* Charts Section */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+            <div className="group bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/20 hover:scale-105 hover:shadow-2xl hover:shadow-[0_0_2rem_rgba(99,102,241,0.4)] transition-all duration-500 hover:-translate-y-2">
+              <h2 className="text-2xl lg:text-3xl font-bold mb-8 text-indigo-300 drop-shadow-xl group-hover:text-indigo-200 transition-colors">Sales Overview</h2>
+              <div className="h-80 lg:h-96">
+                <BarChartComponent />
+              </div>
+            </div>
+            <div className="group bg-white/5 backdrop-blur-xl rounded-3xl p-8 border border-white/20 hover:scale-105 hover:shadow-2xl hover:shadow-[0_0_2rem_rgba(168,85,247,0.4)] transition-all duration-500 hover:-translate-y-2">
+              <h2 className="text-2xl lg:text-3xl font-bold mb-8 text-purple-300 drop-shadow-xl group-hover:text-purple-200 transition-colors">Category Distribution</h2>
+              <div className="h-80 lg:h-96">
+                <PieChartComponent />
+              </div>
+            </div>
+          </section>
+
+          {/* Materials Section */}
+          <section>
+            <MaterialCard />
+          </section>
+        </main>
       </div>
     </div>
   );
-};
-
-export default KPICard;
+}
