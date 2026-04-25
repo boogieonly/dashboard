@@ -1,46 +1,66 @@
-'use client';
+'use client'
 
-import { LayoutDashboard, BarChart3, Settings, LogOut, Home } from 'lucide-react';
-import Link from 'next/link';
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
-export default function Sidebar() {
+type NavItem = {
+  href: string
+  label: string
+  icon: string
+}
+
+const Sidebar = () => {
+  const pathname = usePathname()
+
+  const navItems: NavItem[] = [
+    { href: '/diario', label: 'Fechamento Diário', icon: '📅' },
+    { href: '/mensal', label: 'Fechamento Mensal', icon: '📊' },
+    { href: '/visao-geral', label: 'Visão Geral', icon: '👁️' },
+  ]
+
+  const bottomItems: NavItem[] = [
+    { href: '/configuracoes', label: 'Configurações', icon: '⚙️' },
+    { href: '/suporte', label: 'Suporte', icon: '📞' },
+  ]
+
+  const isActive = (href: string): boolean => pathname === href
+
   return (
-    <aside className="w-64 h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white p-6 fixed left-0 top-0 shadow-2xl">
-      {/* Logo */}
-      <div className="mb-8 pb-6 border-b border-slate-700">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-          Metalfama
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">Dashboard Comercial</p>
-      </div>
-
-      {/* Menu */}
-      <nav className="space-y-3">
-        <Link href="/" className="flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-500 text-white transition">
-          <Home size={20} />
-          <span>Dashboard</span>
-        </Link>
-        <Link href="#" className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-700 transition">
-          <BarChart3 size={20} />
-          <span>Relatórios</span>
-        </Link>
-        <Link href="#" className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-700 transition">
-          <LayoutDashboard size={20} />
-          <span>Métricas</span>
-        </Link>
-        <Link href="#" className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-700 transition">
-          <Settings size={20} />
-          <span>Configurações</span>
-        </Link>
+    <aside className="fixed left-0 top-0 h-screen w-64 bg-gradient-to-b from-slate-900 to-slate-800 hidden md:flex flex-col shadow-2xl">
+      <nav className="flex-1 flex flex-col p-8 pt-20 space-y-4">
+        {navItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`flex items-center p-4 rounded-xl transition-all duration-300 group ${
+              isActive(item.href)
+                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-xl'
+                : 'text-slate-300 hover:bg-slate-700 hover:text-white hover:shadow-md'
+            }`}
+          >
+            <span className="mr-4 text-2xl flex-shrink-0">{item.icon}</span>
+            <span className="font-medium text-sm">{item.label}</span>
+          </Link>
+        ))}
       </nav>
-
-      {/* Footer */}
-      <div className="absolute bottom-6 left-6 right-6">
-        <button className="w-full flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition">
-          <LogOut size={18} />
-          <span>Sair</span>
-        </button>
+      <div className="p-8 pb-12 space-y-4 border-t border-slate-700/50">
+        {bottomItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`flex items-center p-4 rounded-xl transition-all duration-300 ${
+              isActive(item.href)
+                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-xl'
+                : 'text-slate-400 hover:bg-slate-700 hover:text-slate-200 hover:shadow-md'
+            }`}
+          >
+            <span className="mr-4 text-2xl flex-shrink-0">{item.icon}</span>
+            <span className="font-medium text-sm">{item.label}</span>
+          </Link>
+        ))}
       </div>
     </aside>
-  );
+  )
 }
+
+export default Sidebar
