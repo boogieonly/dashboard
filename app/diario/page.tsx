@@ -31,8 +31,8 @@ const metrics = [
   { key: 'vendas' as MetricKey, emoji: '📈', label: 'Vendas' },
   { key: 'atrasos' as MetricKey, emoji: '⚠️', label: 'Atrasos' },
   { key: 'carteira' as MetricKey, emoji: '💼', label: 'Carteira' },
-  { key: 'previsaoAtual' as MetricKey, emoji: '🔮', label: 'Previsão Atual' },
-  { key: 'previsaoProx' as MetricKey, emoji: '📅', label: 'Previsão Próxima' },
+  { key: 'previsaoAtual' as MetricKey, emoji: '🔮', label: 'Previsão Mês Atual' },
+  { key: 'previsaoProx' as MetricKey, emoji: '📅', label: 'Previsão Mês Seguinte' },
 ] as Array<{ key: MetricKey; emoji: string; label: string }>;
 
 const formatCurrency = (value: number): string =>
