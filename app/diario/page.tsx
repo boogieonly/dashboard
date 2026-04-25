@@ -1,74 +1,102 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
-type IndicatorKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
-
-interface DailyEntry {
-  id: string;
+type NumericFields = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
+type Metas = { [K in NumericFields]: number };
+type DailyEntry = {
   date: string;
-  faturamento: number;
-  vendas: number;
-  atrasos: number;
-  carteiraTotal: number;
-  previsaoMesAtual: number;
-  previsaoMesSeguinte: number;
-}
+} & Metas;
 
-interface Metas {
-  [key in IndicatorKey]?: number;
-}
+type AccumField = 'faturamento' | 'vendas' | 'atrasos';
 
-interface IndicatorConfig {
-  label: string;
-  icon: string;
-  color: string;
-  inverse: boolean;
-}
-
-const indicatorConfig: Record<IndicatorKey, IndicatorConfig> = {
-  faturamento: { label: 'Faturamento', icon: '💰', color: 'green', inverse: false },
-  vendas: { label: 'Vendas', icon: '📦', color: 'blue', inverse: false },
-  atrasos: { label: 'Atrasos', icon: '⚠️', color: 'red', inverse: true },
-  carteiraTotal: { label: 'Carteira Total', icon: '💳', color: 'purple', inverse: false },
-  previsaoMesAtual: { label: 'Previsão Mês Atual', icon: '📈', color: 'orange', inverse: false },
-  previsaoMesSeguinte: { label: 'Previsão Mês Seguinte', icon: '🔮', color: 'indigo', inverse: false },
+type KpiConfig = {
+  field: NumericFields;
+  emoji: string;
+  title: string;
 };
 
-const defaultMetas: Metas = {
-  faturamento: 500000,
-  vendas: 1000,
-  atrasos: 5,
-  carteiraTotal: 1000000,
-  previsaoMesAtual: 450000,
-  previsaoMesSeguinte: 600000,
+const fieldEmojis: Record<NumericFields, string> = {
+  faturamento: '💰',
+  vendas: '📈',
+  atrasos: '⚠️',
+  carteiraTotal: '💼',
+  previsaoMesAtual: '🔮',
+  previsaoMesSeguinte: '📅',
 };
 
-const ENTRADA_DIARIA: IndicatorKey[] = ['faturamento', 'vendas', 'atrasos'];
-const SNAPSHOT: IndicatorKey[] = ['carteiraTotal', 'previsaoMesAtual', 'previsaoMesSeguinte'];
+const fieldTitles: Record<NumericFields, string> = {
+  faturamento: 'Faturamento',
+  vendas: 'Vendas',
+  atrasos: 'Atrasos',
+  carteiraTotal: 'Carteira Total',
+  previsaoMesAtual: 'Previsão Mês Atual',
+  previsaoMesSeguinte: 'Previsão Mês Seguinte',
+};
 
-const Sparkline: React.FC<{ data: number[]; className?: string }> = ({ data, className = '' }) => {
-  if (data.length === 0) return <div className="w-full h-5 bg-gray-200 rounded" />;
+const kpisDiaria: KpiConfig[] = [
+  { field: 'faturamento', emoji: fieldEmojis.faturamento, title: fieldTitles.faturamento },
+  { field: 'vendas', emoji: fieldEmojis.vendas, title: fieldTitles.vendas },
+  { field: 'atrasos', emoji: fieldEmojis.atrasos, title: fieldTitles.atrasos },
+];
 
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max > min ? max - min : 1;
+const kpisSnapshot: KpiConfig[] = [
+  { field: 'carteiraTotal', emoji: fieldEmojis.carteiraTotal, title: fieldTitles.carteiraTotal },
+  { field: 'previsaoMesAtual', emoji: fieldEmojis.previsaoMesAtual, title: fieldTitles.previsaoMesAtual },
+  { field: 'previsaoMesSeguinte', emoji: fieldEmojis.previsaoMesSeguinte, title: fieldTitles.previsaoMesSeguinte },
+];
 
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * 100;
-      const y = 20 - ((v - min) / range) * 18;
-      return `${x},${y}`;
-    })
-    .join(' ');
+const glassClass = 'bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-6 md:p-8';
+
+const inputClass = 'w-full p-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all duration-200';
+
+const parseDate = (dateStr: string): number => new Date(`${dateStr}T00:00:00`).getTime();
+
+const getTodayDate = (): string => new Date().toISOString().split('T')[0];
+
+const getYesterdayDate = (): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split('T')[0];
+};
+
+const getMonthStartDate = (): string => {
+  const d = new Date();
+  d.setDate(1);
+  return d.toISOString().split('T')[0];
+};
+
+const Sparkline: React.FC<{ data: number[] }> = ({ data }) => {
+  if (!data.length) {
+    return <div className="h-10 bg-gray-800/50 rounded-lg animate-pulse" />;
+  }
+
+  const maxV = Math.max(...data);
+  const minV = Math.min(...data);
+  const range = maxV > minV ? maxV - minV : 1;
+  const width = 120;
+  const height = 40;
+  const points: string[] = [];
+
+  data.forEach((val, i) => {
+    const x = (i / (data.length - 1)) * (width - 20) + 10;
+    const y = height - ((val - minV) / range * (height - 20) + 10);
+    points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  });
 
   return (
-    <svg viewBox="0 0 100 20" className={`w-full h-5 ${className}`}>
+    <svg className="w-full h-10" viewBox={`0 0 ${width} ${height}`}>
+      <defs>
+        <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#1d4ed8" />
+        </linearGradient>
+      </defs>
       <polyline
-        points={points}
+        points={points.join(' ')}
         fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
+        stroke="url(#sparkGrad)"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -77,138 +105,145 @@ const Sparkline: React.FC<{ data: number[]; className?: string }> = ({ data, cla
 };
 
 export default function DiarioPage() {
-  const [dailyEntries, setDailyEntries] = useState<DailyEntry[]>([]);
-  const [metas, setMetas] = useState<Metas>(defaultMetas);
-  const [formData, setFormData] = useState<Partial<DailyEntry>>({});
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<Metas>({
+    faturamento: 100000,
+    vendas: 200,
+    atrasos: 5,
+    carteiraTotal: 50000,
+    previsaoMesAtual: 120000,
+    previsaoMesSeguinte: 150000,
+  });
+  const [formData, setFormData] = useState<DailyEntry>({
+    date: getTodayDate(),
+    faturamento: 0,
+    vendas: 0,
+    atrasos: 0,
+    carteiraTotal: 0,
+    previsaoMesAtual: 0,
+    previsaoMesSeguinte: 0,
+  });
+  const [editingEntryDate, setEditingEntryDate] = useState<string | null>(null);
   const [showMetasModal, setShowMetasModal] = useState(false);
-  const [tempMetas, setTempMetas] = useState<Metas>(defaultMetas);
+  const [tempMetas, setTempMetas] = useState<Metas>(metas);
+
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date)),
+    [entries]
+  );
 
   useEffect(() => {
-    const savedEntries = localStorage.getItem('dailyEntries');
+    const savedEntries = localStorage.getItem('diario-entries');
     if (savedEntries) {
-      setDailyEntries(JSON.parse(savedEntries));
+      setEntries(JSON.parse(savedEntries));
     }
-    const savedMetas = localStorage.getItem('metas');
+    const savedMetas = localStorage.getItem('diario-metas');
     if (savedMetas) {
       setMetas(JSON.parse(savedMetas));
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('dailyEntries', JSON.stringify(dailyEntries));
-    localStorage.setItem('metas', JSON.stringify(metas));
-  }, [dailyEntries, metas]);
+    localStorage.setItem('diario-entries', JSON.stringify(entries));
+  }, [entries]);
 
-  const getDateStr = (date: Date): string => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  useEffect(() => {
+    localStorage.setItem('diario-metas', JSON.stringify(metas));
+  }, [metas]);
 
-  const getLastNDays = (field: IndicatorKey, days: number): number[] => {
-    const data: number[] = [];
-    const today = new Date();
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateStr = getDateStr(d);
-      const entry = dailyEntries.find((e) => e.date === dateStr);
-      data.push(entry ? (entry as any)[field] : 0);
+  const getEntryValue = useCallback((dateStr: string, field: NumericFields): number => {
+    return entries.find((e) => e.date === dateStr)?.[field] ?? 0;
+  }, [entries]);
+
+  const getTodayValue = useCallback((field: NumericFields): number => {
+    return getEntryValue(getTodayDate(), field);
+  }, [getEntryValue]);
+
+  const getYesterdayValue = useCallback((field: NumericFields): number => {
+    return getEntryValue(getYesterdayDate(), field);
+  }, [getEntryValue]);
+
+  const getCurrentAccum = useCallback((field: AccumField): number => {
+    const monthStart = getMonthStartDate();
+    return entries
+      .filter((e) => e.date >= monthStart)
+      .reduce((sum, e) => sum + (e[field] ?? 0), 0);
+  }, [entries]);
+
+  const getCurrentSnapshot = useCallback((field: NumericFields): number => {
+    const sortedDesc = [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    return sortedDesc[0]?.[field] ?? 0;
+  }, [entries]);
+
+  const getSparklineData = useCallback((field: AccumField, days: number = 7): number[] => {
+    const sortedDesc = [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    return sortedDesc.slice(0, days).map((e) => e[field]).reverse();
+  }, [entries]);
+
+  const getPctMeta = useCallback((field: NumericFields, value: number): number => {
+    const meta = metas[field];
+    if (meta === 0) return 0;
+    if (field === 'atrasos') {
+      return Math.max(0, (1 - value / meta) * 100);
     }
-    return data;
-  };
+    return Math.min(100, (value / meta) * 100);
+  }, [metas]);
 
-  const getCurrentValue = (field: IndicatorKey): number => getLastNDays(field, 1)[0];
-
-  const getPreviousValue = (field: IndicatorKey): number | null => {
-    const data = getLastNDays(field, 2);
-    return data.length >= 2 ? data[1] : null;
-  };
-
-  const getTrendIcon = (delta: number): { icon: string; className: string } => {
-    if (delta > 0) return { icon: '↗️', className: 'text-emerald-500' };
-    if (delta < 0) return { icon: '↘️', className: 'text-rose-500' };
-    return { icon: '→', className: 'text-gray-500' };
-  };
-
-  const getProgress = (field: IndicatorKey, value: number, periodDays: number = 1): number => {
-    const monthlyTarget = metas[field];
-    if (monthlyTarget === undefined || monthlyTarget === 0) return 0;
-
-    const periodTarget = (monthlyTarget / 30) * periodDays;
-    const config = indicatorConfig[field];
-    let progress: number;
-
-    if (config.inverse) {
-      progress = Math.max(0, ((periodTarget - value) / periodTarget) * 100);
-    } else {
-      progress = Math.min(100, (value / periodTarget) * 100);
+  const getDeltaColor = useCallback((field: NumericFields, delta: number): string => {
+    if (field === 'atrasos') {
+      return delta > 0 ? 'text-red-400' : 'text-emerald-400';
     }
-    return progress;
+    return delta > 0 ? 'text-emerald-400' : 'text-red-400';
+  }, []);
+
+  const getProgressColor = (pct: number): string => {
+    if (pct >= 80) return 'bg-gradient-to-r from-emerald-400 to-teal-500 shadow-emerald-500/50';
+    if (pct >= 50) return 'bg-gradient-to-r from-yellow-400 to-orange-500 shadow-yellow-500/50';
+    return 'bg-gradient-to-r from-red-400 to-rose-500 shadow-red-500/50';
   };
 
-  const getBarColorClass = (progress: number): string => {
-    if (progress >= 90) return 'bg-gradient-to-r from-emerald-400 to-green-500';
-    if (progress >= 70) return 'bg-gradient-to-r from-amber-400 to-yellow-500';
-    return 'bg-gradient-to-r from-rose-400 to-red-500';
-  };
-
-  const getMonthlySummary = () => {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const monthEntries = dailyEntries.filter((e) => e.date.startsWith(currentMonth));
-
-    const dailySum: Record<string, number> = {};
-    ENTRADA_DIARIA.forEach((f) => {
-      dailySum[f] = monthEntries.reduce((sum, e) => sum + e[f as keyof DailyEntry], 0);
-    });
-
-    const snapshotLast: Record<string, number> = {};
-    if (monthEntries.length > 0) {
-      const last = monthEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-      SNAPSHOT.forEach((f) => {
-        snapshotLast[f] = last[f as keyof DailyEntry];
-      });
-    }
-
-    return { dailySum, snapshotLast };
-  };
-
-  const monthly = getMonthlySummary();
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!formData.date) return;
+    const newEntry: DailyEntry = {
+      date: formData.date,
+      ...formData,
+    } as DailyEntry;
 
-    const entry: DailyEntry = {
-      id: editingId || Date.now().toString(),
-      date: formData.date as string,
-      faturamento: formData.faturamento ?? 0,
-      vendas: formData.vendas ?? 0,
-      atrasos: formData.atrasos ?? 0,
-      carteiraTotal: formData.carteiraTotal ?? 0,
-      previsaoMesAtual: formData.previsaoMesAtual ?? 0,
-      previsaoMesSeguinte: formData.previsaoMesSeguinte ?? 0,
-    };
-
-    if (editingId) {
-      setDailyEntries(dailyEntries.map((e) => (e.id === editingId ? entry : e)));
+    if (editingEntryDate) {
+      setEntries((prev) => prev.map((e) => (e.date === editingEntryDate ? newEntry : e)));
+      setEditingEntryDate(null);
     } else {
-      setDailyEntries([...dailyEntries, entry]);
+      const exists = entries.some((e) => e.date === newEntry.date);
+      if (exists) {
+        alert('Entrada para esta data já existe! Use Editar no histórico.');
+        return;
+      }
+      setEntries((prev) => [...prev, newEntry]);
     }
-    setFormData({});
-    setEditingId(null);
+    const defaultForm: DailyEntry = {
+      date: getTodayDate(),
+      faturamento: 0,
+      vendas: 0,
+      atrasos: 0,
+      carteiraTotal: 0,
+      previsaoMesAtual: 0,
+      previsaoMesSeguinte: 0,
+    };
+    setFormData(defaultForm);
   };
 
-  const handleEdit = (entry: DailyEntry) => {
-    setFormData(entry);
-    setEditingId(entry.id);
+  const handleEditEntry = (date: string) => {
+    const entry = entries.find((e) => e.date === date);
+    if (entry) {
+      setFormData(entry);
+      setEditingEntryDate(date);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setDailyEntries(dailyEntries.filter((e) => e.id !== id));
+  const handleDeleteEntry = (date: string) => {
+    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
+      setEntries((prev) => prev.filter((e) => e.date !== date));
+    }
   };
 
   const handleOpenMetas = () => {
@@ -216,329 +251,363 @@ export default function DiarioPage() {
     setShowMetasModal(true);
   };
 
-  const handleSaveMetas = () => {
+  const handleSaveMetas = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     setMetas(tempMetas);
     setShowMetasModal(false);
   };
 
-  const sortedEntries = dailyEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  const fields: (keyof Partial<DailyEntry>)[] = ['date', 'faturamento', 'vendas', 'atrasos', 'carteiraTotal', 'previsaoMesAtual', 'previsaoMesSeguinte'];
-  const fieldLabels: Record<string, string> = {
-    date: 'Data',
-    faturamento: 'Faturamento',
-    vendas: 'Vendas',
-    atrasos: 'Atrasos',
-    carteiraTotal: 'Carteira Total',
-    previsaoMesAtual: 'Previsão Mês Atual',
-    previsaoMesSeguinte: 'Previsão Mês Seguinte',
-  };
+  const numericFields: NumericFields[] = [
+    'faturamento',
+    'vendas',
+    'atrasos',
+    'carteiraTotal',
+    'previsaoMesAtual',
+    'previsaoMesSeguinte',
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-12 text-center">
-          📊 Diário Financeiro
-        </h1>
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-6 md:p-8 py-12 relative overflow-x-hidden">
+        <button
+          onClick={handleOpenMetas}
+          className="fixed top-6 right-6 z-50 p-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-2xl shadow-2xl hover:shadow-purple-500/50 hover:scale-110 transition-all duration-300 backdrop-blur-sm border border-white/20"
+        >
+          ⚙️ Configurar Metas
+        </button>
 
-        {/* KPI Cards - Entrada Diária */}
-        <section className="mb-12">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">KPI Cards - Entrada Diária</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {ENTRADA_DIARIA.map((field) => {
-              const value = getCurrentValue(field);
-              const sparkData = getLastNDays(field, 7);
-              const progress = getProgress(field, value, 1);
-              const config = indicatorConfig[field];
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 bg-clip-text text-transparent mb-12 md:mb-16 text-center drop-shadow-2xl animate-pulse">
+            Diário Financeiro
+          </h1>
+
+          {/* KPI Cards Entrada Diária */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+            {kpisDiaria.map(({ field, emoji, title }) => {
+              const todayVal = getTodayValue(field);
+              const yestVal = getYesterdayValue(field);
+              const delta = todayVal - yestVal;
+              const pctChg = yestVal ? (delta / yestVal) * 100 : 0;
+              const accumVal = getCurrentAccum(field as AccumField);
+              const pctMeta = getPctMeta(field, accumVal);
+              const sparkData = getSparklineData(field as AccumField);
+              const deltaCls = getDeltaColor(field, delta);
+
               return (
                 <div
                   key={field}
-                  className="group bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300 hover:-translate-y-2"
+                  className={`${glassClass} text-center group hover:scale-[1.02] transition-all duration-500 hover:shadow-3xl border-white/30`}
                 >
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-3xl md:text-4xl">{config.icon}</span>
-                    <span className="text-sm font-semibold text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                      {config.label}
-                    </span>
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <span className="text-4xl drop-shadow-lg">{emoji}</span>
+                    <h3 className="text-xl font-bold text-white drop-shadow-md">{title}</h3>
                   </div>
-                  <div className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
-                    R$ {value.toLocaleString()}
+                  <div className="text-4xl md:text-5xl font-black bg-gradient-to-br from-white via-blue-100 to-white bg-clip-text text-transparent mb-4 drop-shadow-2xl">
+                    {todayVal.toLocaleString('pt-BR')}
                   </div>
-                  <Sparkline data={sparkData} className={`text-${config.color}-500`} />
-                  <div className="w-full bg-gray-200 rounded-2xl h-4 mt-6 overflow-hidden">
-                    <div
-                      className={getBarColorClass(progress)}
-                      style={{ width: `${progress}%` }}
-                    />
+                  <div className={`text-xl font-bold ${deltaCls} mb-6 drop-shadow-lg`}>
+                    {delta >= 0 ? '+' : ''}{delta.toLocaleString('pt-BR')} ({pctChg.toFixed(1)}% vs ontem)
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mt-2">{progress.toFixed(0)}% da meta diária</p>
+                  <div className="mb-6">
+                    <Sparkline data={sparkData} />
+                  </div>
+                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-black/30 backdrop-blur-sm border border-white/30 rounded-2xl text-white/90 font-semibold text-sm shadow-lg">
+                    {pctMeta.toFixed(1)}% meta mensal
+                  </div>
                 </div>
               );
             })}
           </div>
-        </section>
 
-        {/* Posição Atual - Snapshot */}
-        <section className="mb-12">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">Posição Atual - Snapshot</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {SNAPSHOT.map((field) => {
-              const value = getCurrentValue(field);
-              const prevValue = getPreviousValue(field);
-              const delta = prevValue !== null ? value - prevValue : 0;
-              const trend = getTrendIcon(delta);
-              const progress = getProgress(field, value, 1);
-              const config = indicatorConfig[field];
+          {/* KPI Cards Posição Atual */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
+            {kpisSnapshot.map(({ field, emoji, title }) => {
+              const todayVal = getTodayValue(field);
+              const yestVal = getYesterdayValue(field);
+              const delta = todayVal - yestVal;
+              const pctChg = yestVal ? (delta / yestVal) * 100 : 0;
+              const pctMeta = getPctMeta(field, todayVal);
+              const deltaCls = getDeltaColor(field, delta);
+
               return (
                 <div
                   key={field}
-                  className="group bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 border border-white/50 hover:shadow-3xl transition-all duration-300 hover:-translate-y-2"
+                  className={`${glassClass} text-center group hover:scale-[1.02] transition-all duration-500 hover:shadow-3xl border-white/30`}
                 >
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-3xl md:text-4xl">{config.icon}</span>
-                    <span className="text-sm font-semibold text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
-                      {config.label}
-                    </span>
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <span className="text-4xl drop-shadow-lg">{emoji}</span>
+                    <h3 className="text-xl font-bold text-white drop-shadow-md">{title}</h3>
                   </div>
-                  <div className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
-                    R$ {value.toLocaleString()}
+                  <div className="text-4xl md:text-5xl font-black bg-gradient-to-br from-white via-emerald-100 to-white bg-clip-text text-transparent mb-6 drop-shadow-2xl">
+                    {todayVal.toLocaleString('pt-BR')}
                   </div>
-                  <div className="flex items-center text-lg font-semibold mb-6">
-                    <span className={`${trend.className} text-2xl mr-2`}>{trend.icon}</span>
-                    <span className={delta !== 0 ? trend.className : 'text-gray-500'}>
-                      {delta > 0 ? '+' : ''}R$ {Math.abs(delta).toLocaleString()}
-                    </span>
+                  <div className={`text-xl font-bold ${deltaCls} mb-8 drop-shadow-lg`}>
+                    {delta >= 0 ? '+' : ''}{delta.toLocaleString('pt-BR')} ({pctChg.toFixed(1)}% vs ontem)
                   </div>
-                  <div className="w-full bg-gray-200 rounded-2xl h-4 overflow-hidden">
-                    <div
-                      className={getBarColorClass(progress)}
-                      style={{ width: `${progress}%` }}
-                    />
+                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-black/30 backdrop-blur-sm border border-white/30 rounded-2xl text-white/90 font-semibold text-sm shadow-lg">
+                    {pctMeta.toFixed(1)}% meta
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mt-2">{progress.toFixed(0)}% da meta</p>
                 </div>
               );
             })}
           </div>
-        </section>
 
-        {/* Resumo Mensal */}
-        <section className="mb-12">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">📊 Resumo Mensal</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Acumulado do Mês */}
-            <div>
-              <h3 className="text-2xl font-bold text-emerald-600 mb-6 text-center">📊 Acumulado do Mês</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {ENTRADA_DIARIA.map((field) => {
-                  const value = (monthly.dailySum as any)[field] || 0;
-                  const progress = getProgress(field, value, 30);
-                  const config = indicatorConfig[field];
-                  return (
-                    <div key={field} className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-6 border border-white/50">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-2xl">{config.icon}</span>
-                        <span className="text-xs font-semibold text-gray-600">{config.label}</span>
-                      </div>
-                      <div className="text-3xl font-bold text-gray-900 mb-3">R$ {value.toLocaleString()}</div>
-                      <div className="w-full bg-gray-200 rounded-xl h-3 overflow-hidden">
-                        <div
-                          className={getBarColorClass(progress)}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">{progress.toFixed(0)}% da meta</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Posição Atual */}
-            <div>
-              <h3 className="text-2xl font-bold text-purple-600 mb-6 text-center">💾 Posição Atual</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {SNAPSHOT.map((field) => {
-                  const value = (monthly.snapshotLast as any)[field] || 0;
-                  const progress = getProgress(field, value, 1);
-                  const config = indicatorConfig[field];
-                  return (
-                    <div key={field} className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-6 border border-white/50">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-2xl">{config.icon}</span>
-                        <span className="text-xs font-semibold text-gray-600">{config.label}</span>
-                      </div>
-                      <div className="text-3xl font-bold text-gray-900 mb-3">R$ {value.toLocaleString()}</div>
-                      <div className="w-full bg-gray-200 rounded-xl h-3 overflow-hidden">
-                        <div
-                          className={getBarColorClass(progress)}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">{progress.toFixed(0)}% da meta</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Formulário */}
-        <section className="mb-12">
-          <div className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 md:p-12 border border-white/50">
-            <h2 className="text-3xl font-bold text-gray-800 mb-8">
-              {editingId ? '✏️ Editar' : '➕ Nova'} Entrada Diária
+          {/* Resumo Mensal */}
+          <section className="mb-20">
+            <h2 className="text-4xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-12 text-center drop-shadow-2xl">
+              📊 Resumo Mensal
             </h2>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {fields.map((f) => (
-                <div key={f as string} className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700 capitalize">
-                    {fieldLabels[f as string]}
-                  </label>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Acumulado do Mês */}
+              <div className={`${glassClass} ${glassClass}`}>
+                <h3 className="text-2xl font-bold mb-8 flex items-center justify-center gap-3 text-white drop-shadow-xl">
+                  💹 Acumulado do Mês
+                </h3>
+                {kpisDiaria.map(({ field, emoji, title }) => {
+                  const value = getCurrentAccum(field as AccumField);
+                  const pct = getPctMeta(field, value);
+                  return (
+                    <div key={field} className="mb-8 last:mb-0 p-6 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="text-3xl">{emoji}</span>
+                        <span className="font-bold text-xl text-white">{title}</span>
+                      </div>
+                      <div className="text-3xl font-black text-white mb-4 drop-shadow-lg">
+                        {value.toLocaleString('pt-BR')}
+                      </div>
+                      <div className="w-full bg-gray-800/50 rounded-full h-4 mb-2 overflow-hidden">
+                        <div
+                          className={getProgressColor(pct)}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <div className="text-sm font-medium text-white/90">
+                        {pct.toFixed(1)}% da meta
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Posição Atual */}
+              <div className={`${glassClass} ${glassClass}`}>
+                <h3 className="text-2xl font-bold mb-8 flex items-center justify-center gap-3 text-white drop-shadow-xl">
+                  📈 Posição Atual
+                </h3>
+                {kpisSnapshot.map(({ field, emoji, title }) => {
+                  const value = getCurrentSnapshot(field);
+                  const pct = getPctMeta(field, value);
+                  return (
+                    <div key={field} className="mb-8 last:mb-0 p-6 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all">
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="text-3xl">{emoji}</span>
+                        <span className="font-bold text-xl text-white">{title}</span>
+                      </div>
+                      <div className="text-3xl font-black text-white mb-4 drop-shadow-lg">
+                        {value.toLocaleString('pt-BR')}
+                      </div>
+                      <div className="w-full bg-gray-800/50 rounded-full h-4 mb-2 overflow-hidden">
+                        <div
+                          className={getProgressColor(pct)}
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                      <div className="text-sm font-medium text-white/90">
+                        {pct.toFixed(1)}% da meta
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* Formulário de Entrada */}
+          <section className="mb-20">
+            <div className={`${glassClass} ${glassClass}`}>
+              <h2 className="text-3xl font-bold mb-8 text-center text-white drop-shadow-2xl">
+                {editingEntryDate ? '✏️ Editar Entrada' : '➕ Nova Entrada Diária'}
+              </h2>
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-semibold text-white/90 mb-2">📅 Data</label>
                   <input
-                    type={f === 'date' ? 'date' : 'number'}
-                    step={f === 'date' ? undefined : '0.01'}
-                    value={(formData[f as keyof Partial<DailyEntry>] ?? '') as string}
-                    onChange={(e) =>
-                      setFormData({ ...formData, [f]: f === 'date' ? e.target.value : Number(e.target.value) || 0 }
-                    )}
-                    className="w-full p-4 border border-gray-300 rounded-2xl focus:ring-4 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
-                    required={f === 'date'}
+                    type="date"
+                    required
+                    value={formData.date}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+                    className={inputClass}
                   />
                 </div>
-              ))}
-              <div className="lg:col-span-3 flex flex-col sm:flex-row gap-4 pt-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 px-8 rounded-2xl font-bold shadow-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 text-lg"
-                >
-                  {editingId ? 'Atualizar Entrada' : 'Adicionar Entrada'}
-                </button>
-                {editingId && (
+                {numericFields.map((field) => (
+                  <div key={field}>
+                    <label className="block text-sm font-semibold text-white/90 mb-2">
+                      {fieldEmojis[field]} {fieldTitles[field]}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={formData[field]}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          [field]: Number(e.target.value) || 0,
+                        }))
+                      }
+                      className={inputClass}
+                      placeholder="0"
+                    />
+                  </div>
+                ))}
+                <div className="md:col-span-2 lg:col-span-3 pt-4">
                   <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({});
-                      setEditingId(null);
-                    }}
-                    className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 text-white py-4 px-8 rounded-2xl font-bold shadow-xl hover:from-gray-600 hover:to-gray-700 transition-all duration-200 text-lg"
+                    type="submit"
+                    className="w-full p-5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-bold text-xl rounded-2xl shadow-2xl hover:shadow-emerald-500/50 hover:scale-105 transition-all duration-300 border border-white/20 backdrop-blur-sm"
                   >
-                    Cancelar
+                    {editingEntryDate ? 'Atualizar' : 'Registrar'} Entrada
                   </button>
-                )}
-              </div>
-            </form>
-          </div>
-        </section>
-
-        {/* Histórico */}
-        <section className="mb-12">
-          <div className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 md:p-12 border border-white/50 overflow-hidden">
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-3xl font-bold text-gray-800">📋 Histórico</h2>
-              <span className="text-sm text-gray-500">{sortedEntries.length} entradas</span>
+                </div>
+              </form>
             </div>
-            {sortedEntries.length === 0 ? (
-              <p className="text-center text-gray-500 py-12 text-xl">Nenhuma entrada registrada ainda. Adicione a primeira!</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50/50">
-                      <th className="p-4 text-left font-bold text-gray-700">Data</th>
-                      {Object.keys(indicatorConfig).map((key) => (
-                        <th key={key} className="p-4 text-left font-bold text-gray-700">
-                          {indicatorConfig[key as IndicatorKey].label}
-                        </th>
-                      ))}
-                      <th className="p-4 text-left font-bold text-gray-700">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedEntries.map((entry) => (
-                      <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                        <td className="p-4 font-semibold text-gray-900">{entry.date}</td>
-                        <td className="p-4">R$ {entry.faturamento.toLocaleString()}</td>
-                        <td className="p-4">{entry.vendas.toLocaleString()}</td>
-                        <td className="p-4">{entry.atrasos}</td>
-                        <td className="p-4">R$ {entry.carteiraTotal.toLocaleString()}</td>
-                        <td className="p-4">R$ {entry.previsaoMesAtual.toLocaleString()}</td>
-                        <td className="p-4">R$ {entry.previsaoMesSeguinte.toLocaleString()}</td>
-                        <td className="p-4">
-                          <button
-                            onClick={() => handleEdit(entry)}
-                            className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-4 py-2 rounded-xl font-semibold shadow-md hover:from-amber-500 hover:to-yellow-600 transition-all mr-2 text-sm"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => handleDelete(entry.id)}
-                            className="bg-gradient-to-r from-rose-400 to-red-500 text-white px-4 py-2 rounded-xl font-semibold shadow-md hover:from-rose-500 hover:to-red-600 transition-all text-sm"
-                          >
-                            Deletar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
+          </section>
 
-        {/* Botão Metas */}
-        <div className="text-center">
-          <button
-            onClick={handleOpenMetas}
-            className="bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 text-white px-12 py-6 rounded-3xl font-bold text-xl shadow-2xl hover:shadow-3xl hover:from-purple-600 hover:via-indigo-600 hover:to-purple-700 transition-all duration-300 transform hover:-translate-y-1"
-          >
-            ⚙️ Configurar Metas Mensais
-          </button>
+          {/* Histórico */}
+          <section>
+            <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-white drop-shadow-2xl">
+              📋 Histórico
+            </h2>
+            <div className={`${glassClass} overflow-x-auto shadow-3xl ${glassClass}`}>
+              <table className="w-full text-sm md:text-base">
+                <thead>
+                  <tr className="border-b-2 border-white/30">
+                    <th className="p-4 text-left font-bold text-white">Data</th>
+                    <th className="p-4 text-center font-bold text-white">💰 Fat.</th>
+                    <th className="p-4 text-center font-bold text-white">📈 Vend.</th>
+                    <th className="p-4 text-center font-bold text-white">⚠️ Atr.</th>
+                    <th className="p-4 text-center font-bold text-white">💼 Carteira</th>
+                    <th className="p-4 text-center font-bold text-white">🔮 Prev. Atual</th>
+                    <th className="p-4 text-center font-bold text-white">📅 Prev. Seg.</th>
+                    <th className="p-4 text-center font-bold text-white">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedEntries.slice(0, 30).map((entry) => (
+                    <tr
+                      key={entry.date}
+                      className="hover:bg-white/20 transition-all duration-200 border-b border-white/10 last:border-b-0"
+                    >
+                      <td className="p-4 font-semibold text-white">{entry.date}</td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.faturamento.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.vendas.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.atrasos.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.carteiraTotal.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.previsaoMesAtual.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center text-white/90 font-mono">
+                        {entry.previsaoMesSeguinte.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => handleEditEntry(entry.date)}
+                          className="mr-3 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold text-sm transition-all shadow-lg hover:shadow-blue-500/50"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(entry.date)}
+                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold text-sm transition-all shadow-lg hover:shadow-red-500/50"
+                        >
+                          Deletar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {sortedEntries.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-12 text-center text-white/60 font-medium">
+                        Nenhuma entrada registrada ainda. Comece adicionando a primeira! 🎉
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       </div>
 
-      {/* Modal Metas */}
+      {/* Modal Configurar Metas */}
       {showMetasModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 md:p-12 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/50">
-            <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">⚙️ Configurar Metas Mensais</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-              {Object.entries(indicatorConfig).map(([key, config]) => (
-                <div key={key} className="space-y-3">
-                  <label className="block text-sm font-bold text-gray-700 flex items-center">
-                    {config.icon} {config.label}
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={tempMetas[key as IndicatorKey]?.toString() ?? ''}
-                    onChange={(e) =>
-                      setTempMetas({ ...tempMetas, [key]: Number(e.target.value) || 0 }
-                    )}
-                    className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-sm text-lg"
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-col sm:flex-row gap-4 justify-end pt-6 border-t border-gray-200">
-              <button
-                onClick={() => setShowMetasModal(false)}
-                className="flex-1 sm:flex-none bg-gradient-to-r from-gray-400 to-gray-500 text-white py-4 px-8 rounded-2xl font-bold shadow-xl hover:from-gray-500 hover:to-gray-600 transition-all text-lg"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveMetas}
-                className="flex-1 sm:flex-none bg-gradient-to-r from-emerald-500 to-green-600 text-white py-4 px-8 rounded-2xl font-bold shadow-xl hover:from-emerald-600 hover:to-green-700 transition-all text-lg"
-              >
-                Salvar Metas
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white/20 backdrop-blur-3xl border border-white/30 rounded-3xl p-8 w-full max-w-lg shadow-3xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-3xl font-bold mb-8 text-center text-white drop-shadow-2xl flex items-center justify-center gap-3">
+              ⚙️ Configurar Metas
+            </h2>
+            <form onSubmit={handleSaveMetas} className="space-y-6">
+              {Object.entries(tempMetas).map(([key, value]) => {
+                const field = key as NumericFields;
+                return (
+                  <div key={field}>
+                    <label className="block text-sm font-bold text-white/95 mb-3 capitalize">
+                      {fieldEmojis[field]} {fieldTitles[field]}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={value}
+                      onChange={(e) =>
+                        setTempMetas((prev) => ({
+                          ...prev,
+                          [field]: Number(e.target.value) || 0,
+                        }))
+                      }
+                      className={`${inputClass} text-lg`}
+                      placeholder="Defina a meta..."
+                    />
+                  </div>
+                );
+              })}
+              <div className="flex gap-4 pt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowMetasModal(false)}
+                  className="flex-1 p-4 bg-gray-500/50 hover:bg-gray-600/50 text-white font-bold rounded-2xl border border-white/30 backdrop-blur-sm transition-all shadow-xl hover:shadow-gray-500/30 hover:scale-105"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 p-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-2xl border border-white/30 backdrop-blur-sm shadow-xl hover:shadow-green-500/50 hover:scale-105 transition-all"
+                >
+                  Salvar Metas
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-    </div>
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+      `}</style>
+    </>
   );
 }
