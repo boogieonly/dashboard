@@ -4,10 +4,15 @@ import { useState, useEffect } from 'react';
 
 type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
 
-interface DailyEntry {
+type DailyEntry = {
   date: string;
-  [K in MetricKey]: number;
-}
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteira: number;
+  previsaoAtual: number;
+  previsaoProx: number;
+};
 
 type Metas = {
   [K in MetricKey]: number;
