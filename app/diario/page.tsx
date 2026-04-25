@@ -1,145 +1,226 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 
-type NumericFields = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
-type Metas = { [K in NumericFields]: number };
-type DailyEntry = {
+type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
+
+interface DailyEntry {
   date: string;
-} & Metas;
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteiraTotal: number;
+  previsaoMesAtual: number;
+  previsaoMesSeguinte: number;
+}
 
-type AccumField = 'faturamento' | 'vendas' | 'atrasos';
+interface Metas {
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteiraTotal: number;
+  previsaoMesAtual: number;
+  previsaoMesSeguinte: number;
+}
 
-type KpiConfig = {
-  field: NumericFields;
+type Metric = {
+  key: MetricKey;
+  label: string;
   emoji: string;
-  title: string;
+  color: string;
+  inverse?: boolean;
 };
 
-const fieldEmojis: Record<NumericFields, string> = {
-  faturamento: '💰',
-  vendas: '📈',
-  atrasos: '⚠️',
-  carteiraTotal: '💼',
-  previsaoMesAtual: '🔮',
-  previsaoMesSeguinte: '📅',
-};
-
-const fieldTitles: Record<NumericFields, string> = {
-  faturamento: 'Faturamento',
-  vendas: 'Vendas',
-  atrasos: 'Atrasos',
-  carteiraTotal: 'Carteira Total',
-  previsaoMesAtual: 'Previsão Mês Atual',
-  previsaoMesSeguinte: 'Previsão Mês Seguinte',
-};
-
-const kpisDiaria: KpiConfig[] = [
-  { field: 'faturamento', emoji: fieldEmojis.faturamento, title: fieldTitles.faturamento },
-  { field: 'vendas', emoji: fieldEmojis.vendas, title: fieldTitles.vendas },
-  { field: 'atrasos', emoji: fieldEmojis.atrasos, title: fieldTitles.atrasos },
+const METRICS: Metric[] = [
+  { key: 'faturamento', label: 'Faturamento', emoji: '💰', color: 'from-emerald-500 to-emerald-600' },
+  { key: 'vendas', label: 'Vendas', emoji: '📈', color: 'from-blue-500 to-blue-600' },
+  { key: 'atrasos', label: 'Atrasos', emoji: '⚠️', color: 'from-orange-400 to-red-500', inverse: true },
+  { key: 'carteiraTotal', label: 'Carteira Total', emoji: '💼', color: 'from-purple-500 to-purple-600' },
+  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', emoji: '🔮', color: 'from-cyan-500 to-cyan-600' },
+  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', emoji: '📅', color: 'from-yellow-500 to-yellow-600' },
 ];
 
-const kpisSnapshot: KpiConfig[] = [
-  { field: 'carteiraTotal', emoji: fieldEmojis.carteiraTotal, title: fieldTitles.carteiraTotal },
-  { field: 'previsaoMesAtual', emoji: fieldEmojis.previsaoMesAtual, title: fieldTitles.previsaoMesAtual },
-  { field: 'previsaoMesSeguinte', emoji: fieldEmojis.previsaoMesSeguinte, title: fieldTitles.previsaoMesSeguinte },
-];
+const POSICAO_METRICS = METRICS.slice(3);
 
-const glassClass = 'bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl rounded-3xl p-6 md:p-8';
-
-const inputClass = 'w-full p-3 rounded-xl bg-white/20 border border-white/30 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all duration-200';
-
-const parseDate = (dateStr: string): number => new Date(`${dateStr}T00:00:00`).getTime();
-
-const getTodayDate = (): string => new Date().toISOString().split('T')[0];
-
-const getYesterdayDate = (): string => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+const defaultMetas: Metas = {
+  faturamento: 0,
+  vendas: 0,
+  atrasos: 0,
+  carteiraTotal: 0,
+  previsaoMesAtual: 0,
+  previsaoMesSeguinte: 0,
 };
 
-const getMonthStartDate = (): string => {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().split('T')[0];
+const defaultFormData: DailyEntry = {
+  date: '',
+  faturamento: 0,
+  vendas: 0,
+  atrasos: 0,
+  carteiraTotal: 0,
+  previsaoMesAtual: 0,
+  previsaoMesSeguinte: 0,
 };
 
-const Sparkline: React.FC<{ data: number[] }> = ({ data }) => {
-  if (!data.length) {
-    return <div className="h-10 bg-gray-800/50 rounded-lg animate-pulse" />;
-  }
+function getToday(): string {
+  return new Date().toISOString().split('T')[0];
+}
 
-  const maxV = Math.max(...data);
-  const minV = Math.min(...data);
-  const range = maxV > minV ? maxV - minV : 1;
-  const width = 120;
-  const height = 40;
-  const points: string[] = [];
+function getMonthStart(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00Z');
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString().split('T')[0];
+}
 
-  data.forEach((val, i) => {
-    const x = (i / (data.length - 1)) * (width - 20) + 10;
-    const y = height - ((val - minV) / range * (height - 20) + 10);
-    points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-  });
+function sameMonth(date1: string, date2: string): boolean {
+  const d1 = new Date(date1 + 'T00:00:00Z');
+  const d2 = new Date(date2 + 'T00:00:00Z');
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
+}
 
-  return (
-    <svg className="w-full h-10" viewBox={`0 0 ${width} ${height}`}>
-      <defs>
-        <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" />
-          <stop offset="100%" stopColor="#1d4ed8" />
-        </linearGradient>
-      </defs>
-      <polyline
-        points={points.join(' ')}
-        fill="none"
-        stroke="url(#sparkGrad)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-};
-
-export default function DiarioPage() {
-  const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [metas, setMetas] = useState<Metas>({
-    faturamento: 100000,
-    vendas: 200,
-    atrasos: 5,
-    carteiraTotal: 50000,
-    previsaoMesAtual: 120000,
-    previsaoMesSeguinte: 150000,
-  });
-  const [formData, setFormData] = useState<DailyEntry>({
-    date: getTodayDate(),
+function computeAccum(
+  date: string,
+  entries: DailyEntry[],
+  monthStart: string
+): Record<MetricKey, number> {
+  const targetMonthStart = getMonthStart(date);
+  const sums: Record<MetricKey, number> = {
     faturamento: 0,
     vendas: 0,
     atrasos: 0,
     carteiraTotal: 0,
     previsaoMesAtual: 0,
     previsaoMesSeguinte: 0,
-  });
-  const [editingEntryDate, setEditingEntryDate] = useState<string | null>(null);
-  const [showMetasModal, setShowMetasModal] = useState(false);
-  const [tempMetas, setTempMetas] = useState<Metas>(metas);
+  };
+  entries
+    .filter((e) => sameMonth(e.date, date) && e.date <= date)
+    .forEach((e) => {
+      sums.faturamento += e.faturamento;
+      sums.vendas += e.vendas;
+      sums.atrasos += e.atrasos;
+      sums.carteiraTotal += e.carteiraTotal;
+      sums.previsaoMesAtual += e.previsaoMesAtual;
+      sums.previsaoMesSeguinte += e.previsaoMesSeguinte;
+    });
+  return sums;
+}
 
-  const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date)),
-    [entries]
+function getLast7Accum(
+  metricKey: MetricKey,
+  entries: DailyEntry[],
+  monthStart: string
+): number[] {
+  const today = getToday();
+  const dates: string[] = [];
+  let current = new Date(today + 'T00:00:00Z');
+  for (let i = 0; i < 7; i++) {
+    const dateStr = current.toISOString().split('T')[0];
+    dates.push(dateStr);
+    current.setDate(current.getDate() - 1);
+  }
+  return dates.map((d) => {
+    const acc = computeAccum(d, entries, monthStart);
+    return (acc as any)[metricKey];
+  });
+}
+
+function Sparkline({ data, color = 'current' }: { data: number[]; color?: string }) {
+  if (data.length === 0) {
+    return <div className="w-20 h-6 bg-gray-300/50 rounded-full" />;
+  }
+  const minV = Math.min(...data);
+  const maxV = Math.max(...data);
+  const range = maxV - minV || 1;
+  const normalizeY = (v: number) => 100 - ((v - minV) / range) * 80;
+  const points = data
+    .map((v, i) => `${(i / (data.length - 1)) * 100},${normalizeY(v)}`)
+    .join(' ');
+  return (
+    <svg viewBox="0 0 100 100" className={`w-20 h-6 ${color}`}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export default function DiarioPage() {
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<Metas>(defaultMetas);
+  const [metasForm, setMetasForm] = useState<Metas>(defaultMetas);
+  const [formData, setFormData] = useState<DailyEntry>({ ...defaultFormData, date: getToday() });
+  const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
+  const [showMetasModal, setShowMetasModal] = useState(false);
+
+  const today = getToday();
+  const monthStart = useMemo(() => getMonthStart(today), []);
+  const prevDay = useMemo(() => {
+    const d = new Date(today + 'T00:00:00Z');
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }, [today]);
+
+  const accumToday = useMemo(
+    () => computeAccum(today, entries, monthStart),
+    [today, entries, monthStart]
   );
 
+  const prevAccum = useMemo(
+    () => computeAccum(prevDay, entries, monthStart),
+    [prevDay, entries, monthStart]
+  );
+
+  const last7Datas = useMemo(() => {
+    const data: Record<MetricKey, number[]> = {} as any;
+    METRICS.forEach((m) => {
+      data[m.key] = getLast7Accum(m.key, entries, monthStart);
+    });
+    return data;
+  }, [entries, monthStart]);
+
+  const monthAccum = useMemo(() => {
+    const sums: Record<MetricKey, number> = {
+      faturamento: 0,
+      vendas: 0,
+      atrasos: 0,
+      carteiraTotal: 0,
+      previsaoMesAtual: 0,
+      previsaoMesSeguinte: 0,
+    };
+    entries
+      .filter((e) => sameMonth(e.date, monthStart))
+      .forEach((e) => {
+        sums.faturamento += e.faturamento;
+        sums.vendas += e.vendas;
+        sums.atrasos += e.atrasos;
+        sums.carteiraTotal += e.carteiraTotal;
+        sums.previsaoMesAtual += e.previsaoMesAtual;
+        sums.previsaoMesSeguinte += e.previsaoMesSeguinte;
+      });
+    return sums;
+  }, [entries, monthStart]);
+
+  const lastEntry = entries[entries.length - 1];
+
   useEffect(() => {
-    const savedEntries = localStorage.getItem('diario-entries');
-    if (savedEntries) {
-      setEntries(JSON.parse(savedEntries));
-    }
-    const savedMetas = localStorage.getItem('diario-metas');
-    if (savedMetas) {
-      setMetas(JSON.parse(savedMetas));
+    try {
+      const entriesStr = localStorage.getItem('diario-entries');
+      if (entriesStr) {
+        setEntries(JSON.parse(entriesStr));
+      }
+      const metasStr = localStorage.getItem('diario-metas');
+      if (metasStr) {
+        const loadedMetas = JSON.parse(metasStr) as Metas;
+        setMetas(loadedMetas);
+        setMetasForm(loadedMetas);
+      }
+    } catch (e) {
+      console.error('Load error:', e);
     }
   }, []);
 
@@ -148,447 +229,336 @@ export default function DiarioPage() {
   }, [entries]);
 
   useEffect(() => {
-    localStorage.setItem('diario-metas', JSON.stringify(metas));
+    if (Object.values(metas).some((v) => v !== 0)) {
+      localStorage.setItem('diario-metas', JSON.stringify(metas));
+    }
   }, [metas]);
 
-  const getEntryValue = useCallback((dateStr: string, field: NumericFields): number => {
-    return entries.find((e) => e.date === dateStr)?.[field] ?? 0;
-  }, [entries]);
-
-  const getTodayValue = useCallback((field: NumericFields): number => {
-    return getEntryValue(getTodayDate(), field);
-  }, [getEntryValue]);
-
-  const getYesterdayValue = useCallback((field: NumericFields): number => {
-    return getEntryValue(getYesterdayDate(), field);
-  }, [getEntryValue]);
-
-  const getCurrentAccum = useCallback((field: AccumField): number => {
-    const monthStart = getMonthStartDate();
-    return entries
-      .filter((e) => e.date >= monthStart)
-      .reduce((sum, e) => sum + (e[field] ?? 0), 0);
-  }, [entries]);
-
-  const getCurrentSnapshot = useCallback((field: NumericFields): number => {
-    const sortedDesc = [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date));
-    return sortedDesc[0]?.[field] ?? 0;
-  }, [entries]);
-
-  const getSparklineData = useCallback((field: AccumField, days: number = 7): number[] => {
-    const sortedDesc = [...entries].sort((a, b) => parseDate(b.date) - parseDate(a.date));
-    return sortedDesc.slice(0, days).map((e) => e[field]).reverse();
-  }, [entries]);
-
-  const getPctMeta = useCallback((field: NumericFields, value: number): number => {
-    const meta = metas[field];
-    if (meta === 0) return 0;
-    if (field === 'atrasos') {
-      return Math.max(0, (1 - value / meta) * 100);
-    }
-    return Math.min(100, (value / meta) * 100);
-  }, [metas]);
-
-  const getDeltaColor = useCallback((field: NumericFields, delta: number): string => {
-    if (field === 'atrasos') {
-      return delta > 0 ? 'text-red-400' : 'text-emerald-400';
-    }
-    return delta > 0 ? 'text-emerald-400' : 'text-red-400';
-  }, []);
-
-  const getProgressColor = (pct: number): string => {
-    if (pct >= 80) return 'bg-gradient-to-r from-emerald-400 to-teal-500 shadow-emerald-500/50';
-    if (pct >= 50) return 'bg-gradient-to-r from-yellow-400 to-orange-500 shadow-yellow-500/50';
-    return 'bg-gradient-to-r from-red-400 to-rose-500 shadow-red-500/50';
-  };
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newEntry: DailyEntry = {
-  ...formData,
-} as DailyEntry;
-
-    if (editingEntryDate) {
-      setEntries((prev) => prev.map((e) => (e.date === editingEntryDate ? newEntry : e)));
-      setEditingEntryDate(null);
+    const entry: DailyEntry = {
+      date: formData.date,
+      faturamento: formData.faturamento,
+      vendas: formData.vendas,
+      atrasos: formData.atrasos,
+      carteiraTotal: formData.carteiraTotal,
+      previsaoMesAtual: formData.previsaoMesAtual,
+      previsaoMesSeguinte: formData.previsaoMesSeguinte,
+    };
+    if (editingEntry) {
+      setEntries(entries.map((en) => (en.date === entry.date ? entry : en)));
     } else {
-      const exists = entries.some((e) => e.date === newEntry.date);
-      if (exists) {
-        alert('Entrada para esta data já existe! Use Editar no histórico.');
+      if (entries.some((en) => en.date === entry.date)) {
+        alert('Registro para esta data já existe!');
         return;
       }
-      setEntries((prev) => [...prev, newEntry]);
+      setEntries([...entries, entry].sort((a, b) => a.date.localeCompare(b.date)));
     }
-    const defaultForm: DailyEntry = {
-      date: getTodayDate(),
-      faturamento: 0,
-      vendas: 0,
-      atrasos: 0,
-      carteiraTotal: 0,
-      previsaoMesAtual: 0,
-      previsaoMesSeguinte: 0,
-    };
-    setFormData(defaultForm);
+    setEditingEntry(null);
+    setFormData({ ...defaultFormData, date: getToday() });
   };
 
-  const handleEditEntry = (date: string) => {
-    const entry = entries.find((e) => e.date === date);
-    if (entry) {
-      setFormData(entry);
-      setEditingEntryDate(date);
-    }
-  };
-
-  const handleDeleteEntry = (date: string) => {
-    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
-      setEntries((prev) => prev.filter((e) => e.date !== date));
-    }
-  };
-
-  const handleOpenMetas = () => {
-    setTempMetas(metas);
-    setShowMetasModal(true);
-  };
-
-  const handleSaveMetas = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleMetasSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setMetas(tempMetas);
+    setMetas(metasForm);
     setShowMetasModal(false);
   };
 
-  const numericFields: NumericFields[] = [
-    'faturamento',
-    'vendas',
-    'atrasos',
-    'carteiraTotal',
-    'previsaoMesAtual',
-    'previsaoMesSeguinte',
-  ];
+  const startEdit = useCallback((entry: DailyEntry) => {
+    setEditingEntry(entry);
+    setFormData(entry);
+  }, []);
+
+  const deleteEntry = useCallback((date: string) => {
+    setEntries(entries.filter((e) => e.date !== date));
+  }, [entries]);
+
+  const isGood = (metric: Metric, accum: number, meta: number): boolean => {
+    const pct = meta > 0 ? (accum / meta) * 100 : 0;
+    return metric.inverse ? pct < 100 : pct >= 100;
+  };
+
+  const getPctChange = (metricKey: MetricKey): number => {
+    const todayVal = accumToday[metricKey];
+    const prevVal = prevAccum[metricKey];
+    return prevVal > 0 ? ((todayVal - prevVal) / prevVal) * 100 : 0;
+  };
 
   return (
-    <>
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-6 md:p-8 py-12 relative overflow-x-hidden">
-        <button
-          onClick={handleOpenMetas}
-          className="fixed top-6 right-6 z-50 p-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-2xl shadow-2xl hover:shadow-purple-500/50 hover:scale-110 transition-all duration-300 backdrop-blur-sm border border-white/20"
-        >
-          ⚙️ Configurar Metas
-        </button>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900/50 to-pink-900/50 py-12 px-4 text-white">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-5xl md:text-6xl font-black text-center mb-16 bg-gradient-to-r from-white via-blue-100 to-purple-200 bg-clip-text text-transparent drop-shadow-2xl animate-pulse">
+          📊 Diário de Indicadores
+        </h1>
 
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-purple-400 via-pink-400 to-red-400 bg-clip-text text-transparent mb-12 md:mb-16 text-center drop-shadow-2xl animate-pulse">
-            Diário Financeiro
-          </h1>
+        {/* Config Metas Button */}
+        <div className="flex justify-end mb-12">
+          <button
+            onClick={() => setShowMetasModal(true)}
+            className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-white px-8 py-3 rounded-2xl font-bold shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 border border-yellow-300/50"
+          >
+            ⚙️ Configurar Metas
+          </button>
+        </div>
 
-          {/* KPI Cards Entrada Diária */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
-            {kpisDiaria.map(({ field, emoji, title }) => {
-              const todayVal = getTodayValue(field);
-              const yestVal = getYesterdayValue(field);
-              const delta = todayVal - yestVal;
-              const pctChg = yestVal ? (delta / yestVal) * 100 : 0;
-              const accumVal = getCurrentAccum(field as AccumField);
-              const pctMeta = getPctMeta(field, accumVal);
-              const sparkData = getSparklineData(field as AccumField);
-              const deltaCls = getDeltaColor(field, delta);
-
+        {/* Seção 1 - KPI Cards */}
+        <section className="mb-20">
+          <h2 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+            Seção 1 - KPI Cards (Acumulado até Hoje)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {METRICS.map((metric) => {
+              const accum = accumToday[metric.key as MetricKey];
+              const meta = metas[metric.key as MetricKey];
+              const pctMeta = meta > 0 ? (accum / meta) * 100 : 0;
+              const deltaPct = getPctChange(metric.key as MetricKey);
+              const good = isGood(metric, accum, meta);
+              const sparkData = last7Datas[metric.key as MetricKey];
               return (
                 <div
-                  key={field}
-                  className={`${glassClass} text-center group hover:scale-[1.02] transition-all duration-500 hover:shadow-3xl border-white/30`}
+                  key={metric.key}
+                  className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl hover:-translate-y-3 transition-all duration-500 cursor-pointer relative overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05))',
+                  }}
                 >
-                  <div className="flex items-center justify-center gap-3 mb-4">
-                    <span className="text-4xl drop-shadow-lg">{emoji}</span>
-                    <h3 className="text-xl font-bold text-white drop-shadow-md">{title}</h3>
+                  <div className="absolute inset-0 bg-gradient-to-br ${metric.color} opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
+                  <div className="relative z-10 flex items-start justify-between mb-6">
+                    <span className="text-4xl drop-shadow-lg">{metric.emoji}</span>
+                    <span
+                      className={`text-lg font-bold px-3 py-1 rounded-full ${good ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50' : 'bg-red-500/20 text-red-300 border-red-400/50'} border`}
+                    >
+                      {meta > 0 ? pctMeta.toFixed(1) + '%' : 'N/A'}
+                    </span>
                   </div>
-                  <div className="text-4xl md:text-5xl font-black bg-gradient-to-br from-white via-blue-100 to-white bg-clip-text text-transparent mb-4 drop-shadow-2xl">
-                    {todayVal.toLocaleString('pt-BR')}
+                  <h3 className="text-4xl md:text-5xl font-black mb-4 bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent drop-shadow-2xl">
+                    {accum.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </h3>
+                  <div className="flex items-center gap-4 mb-6">
+                    <Sparkline data={sparkData} color={`text-${metric.color.split('from-')[1].split('-')[0]}-400`} />
+                    <span
+                      className={`font-mono text-xl font-bold ${deltaPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                    >
+                      {deltaPct >= 0 ? `+${deltaPct.toFixed(1)}%` : `${deltaPct.toFixed(1)}%`}
+                    </span>
                   </div>
-                  <div className={`text-xl font-bold ${deltaCls} mb-6 drop-shadow-lg`}>
-                    {delta >= 0 ? '+' : ''}{delta.toLocaleString('pt-BR')} ({pctChg.toFixed(1)}% vs ontem)
-                  </div>
-                  <div className="mb-6">
-                    <Sparkline data={sparkData} />
-                  </div>
-                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-black/30 backdrop-blur-sm border border-white/30 rounded-2xl text-white/90 font-semibold text-sm shadow-lg">
-                    {pctMeta.toFixed(1)}% meta mensal
-                  </div>
+                  <p className="text-lg font-semibold text-white/80 capitalize">{metric.label}</p>
                 </div>
               );
             })}
           </div>
+        </section>
 
-          {/* KPI Cards Posição Atual */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
-            {kpisSnapshot.map(({ field, emoji, title }) => {
-              const todayVal = getTodayValue(field);
-              const yestVal = getYesterdayValue(field);
-              const delta = todayVal - yestVal;
-              const pctChg = yestVal ? (delta / yestVal) * 100 : 0;
-              const pctMeta = getPctMeta(field, todayVal);
-              const deltaCls = getDeltaColor(field, delta);
-
+        {/* Seção 2 - Posição Atual */}
+        <section className="mb-20">
+          <h2 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+            Seção 2 - Posição Atual
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {POSICAO_METRICS.map((metric) => {
+              const value = lastEntry ? (lastEntry as any)[metric.key] : 0;
               return (
                 <div
-                  key={field}
-                  className={`${glassClass} text-center group hover:scale-[1.02] transition-all duration-500 hover:shadow-3xl border-white/30`}
+                  key={metric.key}
+                  className="bg-white/20 backdrop-blur-xl border border-white/30 rounded-2xl p-8 text-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
                 >
-                  <div className="flex items-center justify-center gap-3 mb-4">
-                    <span className="text-4xl drop-shadow-lg">{emoji}</span>
-                    <h3 className="text-xl font-bold text-white drop-shadow-md">{title}</h3>
-                  </div>
-                  <div className="text-4xl md:text-5xl font-black bg-gradient-to-br from-white via-emerald-100 to-white bg-clip-text text-transparent mb-6 drop-shadow-2xl">
-                    {todayVal.toLocaleString('pt-BR')}
-                  </div>
-                  <div className={`text-xl font-bold ${deltaCls} mb-8 drop-shadow-lg`}>
-                    {delta >= 0 ? '+' : ''}{delta.toLocaleString('pt-BR')} ({pctChg.toFixed(1)}% vs ontem)
-                  </div>
-                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-black/30 backdrop-blur-sm border border-white/30 rounded-2xl text-white/90 font-semibold text-sm shadow-lg">
-                    {pctMeta.toFixed(1)}% meta
-                  </div>
+                  <span className="text-5xl block mb-4 drop-shadow-lg">{metric.emoji}</span>
+                  <h3 className="text-3xl font-black text-white mb-2">
+                    {value.toLocaleString('pt-BR')}
+                  </h3>
+                  <p className="text-white/70 font-medium capitalize text-sm tracking-wide">{metric.label}</p>
                 </div>
               );
             })}
           </div>
+        </section>
 
-          {/* Resumo Mensal */}
-          <section className="mb-20">
-            <h2 className="text-4xl font-black bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent mb-12 text-center drop-shadow-2xl">
-              📊 Resumo Mensal
-            </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Acumulado do Mês */}
-              <div className={`${glassClass} ${glassClass}`}>
-                <h3 className="text-2xl font-bold mb-8 flex items-center justify-center gap-3 text-white drop-shadow-xl">
-                  💹 Acumulado do Mês
-                </h3>
-                {kpisDiaria.map(({ field, emoji, title }) => {
-                  const value = getCurrentAccum(field as AccumField);
-                  const pct = getPctMeta(field, value);
-                  return (
-                    <div key={field} className="mb-8 last:mb-0 p-6 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all">
-                      <div className="flex items-center gap-3 mb-4">
-                        <span className="text-3xl">{emoji}</span>
-                        <span className="font-bold text-xl text-white">{title}</span>
-                      </div>
-                      <div className="text-3xl font-black text-white mb-4 drop-shadow-lg">
-                        {value.toLocaleString('pt-BR')}
-                      </div>
-                      <div className="w-full bg-gray-800/50 rounded-full h-4 mb-2 overflow-hidden">
-                        <div
-                          className={getProgressColor(pct)}
-                          style={{ width: `${Math.min(100, pct)}%` }}
-                        />
-                      </div>
-                      <div className="text-sm font-medium text-white/90">
-                        {pct.toFixed(1)}% da meta
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Posição Atual */}
-              <div className={`${glassClass} ${glassClass}`}>
-                <h3 className="text-2xl font-bold mb-8 flex items-center justify-center gap-3 text-white drop-shadow-xl">
-                  📈 Posição Atual
-                </h3>
-                {kpisSnapshot.map(({ field, emoji, title }) => {
-                  const value = getCurrentSnapshot(field);
-                  const pct = getPctMeta(field, value);
-                  return (
-                    <div key={field} className="mb-8 last:mb-0 p-6 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all">
-                      <div className="flex items-center gap-3 mb-4">
-                        <span className="text-3xl">{emoji}</span>
-                        <span className="font-bold text-xl text-white">{title}</span>
-                      </div>
-                      <div className="text-3xl font-black text-white mb-4 drop-shadow-lg">
-                        {value.toLocaleString('pt-BR')}
-                      </div>
-                      <div className="w-full bg-gray-800/50 rounded-full h-4 mb-2 overflow-hidden">
-                        <div
-                          className={getProgressColor(pct)}
-                          style={{ width: `${Math.min(100, pct)}%` }}
-                        />
-                      </div>
-                      <div className="text-sm font-medium text-white/90">
-                        {pct.toFixed(1)}% da meta
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-
-          {/* Formulário de Entrada */}
-          <section className="mb-20">
-            <div className={`${glassClass} ${glassClass}`}>
-              <h2 className="text-3xl font-bold mb-8 text-center text-white drop-shadow-2xl">
-                {editingEntryDate ? '✏️ Editar Entrada' : '➕ Nova Entrada Diária'}
-              </h2>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-white/90 mb-2">📅 Data</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.date}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
-                    className={inputClass}
-                  />
-                </div>
-                {numericFields.map((field) => (
-                  <div key={field}>
-                    <label className="block text-sm font-semibold text-white/90 mb-2">
-                      {fieldEmojis[field]} {fieldTitles[field]}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      required
-                      value={formData[field]}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          [field]: Number(e.target.value) || 0,
-                        }))
-                      }
-                      className={inputClass}
-                      placeholder="0"
+        {/* Resumo Mensal */}
+        <section className="mb-20">
+          <h2 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+            Resumo Mensal
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {METRICS.map((metric) => {
+              const accum = monthAccum[metric.key as MetricKey];
+              const meta = metas[metric.key as MetricKey];
+              const pctMeta = meta > 0 ? (accum / meta) * 100 : 0;
+              const good = isGood(metric, accum, meta);
+              return (
+                <div
+                  key={metric.key}
+                  className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300"
+                >
+                  <div className="flex items-center justify-between mb-6">
+                    <span className="text-4xl">{metric.emoji}</span>
+                    <span
+                      className={`text-xl font-bold px-4 py-2 rounded-2xl ${good ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50' : 'bg-red-500/30 text-red-200 border-red-400/50'} border shadow-lg`}
+                    >
+                      {meta > 0 ? pctMeta.toFixed(1) + '%' : 'N/A'}
+                    </span>
+                  </div>
+                  <h3 className="text-4xl font-black mb-6 text-white drop-shadow-lg">
+                    {accum.toLocaleString('pt-BR')}
+                  </h3>
+                  <div className="w-full bg-white/30 rounded-2xl h-5 overflow-hidden">
+                    <div
+                      className={`h-full bg-gradient-to-r ${metric.color} shadow-lg transition-all duration-1000 ease-out rounded-xl relative ${good ? 'shadow-emerald-500/25' : 'shadow-red-500/25'}`}
+                      style={{ width: `${Math.min(pctMeta, 100)}%` }}
                     />
                   </div>
-                ))}
-                <div className="md:col-span-2 lg:col-span-3 pt-4">
-                  <button
-                    type="submit"
-                    className="w-full p-5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-bold text-xl rounded-2xl shadow-2xl hover:shadow-emerald-500/50 hover:scale-105 transition-all duration-300 border border-white/20 backdrop-blur-sm"
-                  >
-                    {editingEntryDate ? 'Atualizar' : 'Registrar'} Entrada
-                  </button>
+                  <p className="text-sm text-white/60 mt-4">Meta: {meta.toLocaleString('pt-BR')}</p>
+                  <p className="text-white/70 capitalize font-medium mt-1">{metric.label}</p>
                 </div>
-              </form>
-            </div>
-          </section>
+              );
+            })}
+          </div>
+        </section>
 
-          {/* Histórico */}
-          <section>
-            <h2 className="text-3xl font-bold mb-8 flex items-center gap-3 text-white drop-shadow-2xl">
-              📋 Histórico
-            </h2>
-            <div className={`${glassClass} overflow-x-auto shadow-3xl ${glassClass}`}>
-              <table className="w-full text-sm md:text-base">
-                <thead>
-                  <tr className="border-b-2 border-white/30">
-                    <th className="p-4 text-left font-bold text-white">Data</th>
-                    <th className="p-4 text-center font-bold text-white">💰 Fat.</th>
-                    <th className="p-4 text-center font-bold text-white">📈 Vend.</th>
-                    <th className="p-4 text-center font-bold text-white">⚠️ Atr.</th>
-                    <th className="p-4 text-center font-bold text-white">💼 Carteira</th>
-                    <th className="p-4 text-center font-bold text-white">🔮 Prev. Atual</th>
-                    <th className="p-4 text-center font-bold text-white">📅 Prev. Seg.</th>
-                    <th className="p-4 text-center font-bold text-white">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedEntries.slice(0, 30).map((entry) => (
+        {/* Histórico */}
+        <section className="mb-16">
+          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+            Histórico
+          </h2>
+          <div className="bg-white/10 backdrop-blur-3xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/20 uppercase tracking-wider text-white/70 text-xs">
+                  <th className="p-4">Data</th>
+                  {METRICS.map((m) => (
+                    <th key={m.key} className="p-4 text-center">
+                      {m.emoji}<br />{m.label}
+                    </th>
+                  ))}
+                  <th className="p-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries
+                  .sort((a, b) => b.date.localeCompare(a.date))
+                  .map((entry) => (
                     <tr
                       key={entry.date}
-                      className="hover:bg-white/20 transition-all duration-200 border-b border-white/10 last:border-b-0"
+                      className="border-b border-white/10 hover:bg-white/20 transition-colors duration-200"
                     >
-                      <td className="p-4 font-semibold text-white">{entry.date}</td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.faturamento.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.vendas.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.atrasos.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.carteiraTotal.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.previsaoMesAtual.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="p-4 text-center text-white/90 font-mono">
-                        {entry.previsaoMesSeguinte.toLocaleString('pt-BR')}
-                      </td>
+                      <td className="p-4 font-mono font-bold text-white/90">{entry.date}</td>
+                      {METRICS.map((m) => (
+                        <td key={m.key} className="p-4 text-center font-mono">
+                          {((entry as any)[m.key] || 0).toLocaleString('pt-BR')}
+                        </td>
+                      ))}
                       <td className="p-4 text-center">
                         <button
-                          onClick={() => handleEditEntry(entry.date)}
-                          className="mr-3 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold text-sm transition-all shadow-lg hover:shadow-blue-500/50"
+                          onClick={() => startEdit(entry)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-1 rounded-xl text-sm font-bold mr-2 transition-all shadow-md hover:shadow-lg"
                         >
                           Editar
                         </button>
                         <button
-                          onClick={() => handleDeleteEntry(entry.date)}
-                          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold text-sm transition-all shadow-lg hover:shadow-red-500/50"
+                          onClick={() => deleteEntry(entry.date)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-1 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg"
                         >
                           Deletar
                         </button>
                       </td>
                     </tr>
                   ))}
-                  {sortedEntries.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="p-12 text-center text-white/60 font-medium">
-                        Nenhuma entrada registrada ainda. Comece adicionando a primeira! 🎉
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Formulário */}
+        <section>
+          <h2 className="text-3xl font-bold mb-8 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+            {editingEntry ? '✏️ Editar Registro' : '➕ Novo Registro'}
+          </h2>
+          <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-6 items-end mb-6">
+              <div>
+                <label className="block text-white/80 font-medium mb-2">Data</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  required
+                  className="w-full p-4 rounded-2xl bg-white/30 border border-white/40 text-white placeholder-white/50 font-mono text-lg focus:outline-none focus:ring-4 focus:ring-blue-500/30 transition-all shadow-lg hover:shadow-xl"
+                />
+              </div>
+              {METRICS.map((m) => (
+                <div key={m.key}>
+                  <label className="block text-white/80 font-medium mb-2 flex items-center gap-2">
+                    {m.emoji}
+                    <span className="text-sm capitalize">{m.label}</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    value={formData[m.key as keyof DailyEntry] || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        [m.key]: parseFloat(e.target.value) || 0,
+                      } as DailyEntry)
+                    }
+                    className="w-full p-4 rounded-2xl bg-white/30 border border-white/40 text-white placeholder-white/50 font-mono text-lg focus:outline-none focus:ring-4 focus:ring-${m.color.split('from-')[1].split('-')[0]}-500/30 transition-all shadow-lg hover:shadow-xl"
+                  />
+                </div>
+              ))}
             </div>
-          </section>
-        </div>
+            <button
+              type="submit"
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white py-6 rounded-3xl font-black text-xl shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-300 border border-green-400/50"
+            >
+              {editingEntry ? 'Atualizar Registro' : 'Adicionar Registro'}
+            </button>
+          </form>
+        </section>
       </div>
 
-      {/* Modal Configurar Metas */}
+      {/* Metas Modal */}
       {showMetasModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white/20 backdrop-blur-3xl border border-white/30 rounded-3xl p-8 w-full max-w-lg shadow-3xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-3xl font-bold mb-8 text-center text-white drop-shadow-2xl flex items-center justify-center gap-3">
-              ⚙️ Configurar Metas
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-2xl flex items-center justify-center z-50 p-8"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowMetasModal(false);
+          }}
+        >
+          <div className="bg-white/20 backdrop-blur-3xl border border-white/30 rounded-3xl p-10 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-3xl">
+            <h2 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+              ⚙️ Configurar Metas Mensais
             </h2>
-            <form onSubmit={handleSaveMetas} className="space-y-6">
-              {Object.entries(tempMetas).map(([key, value]) => {
-                const field = key as NumericFields;
-                return (
-                  <div key={field}>
-                    <label className="block text-sm font-bold text-white/95 mb-3 capitalize">
-                      {fieldEmojis[field]} {fieldTitles[field]}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={value}
-                      onChange={(e) =>
-                        setTempMetas((prev) => ({
-                          ...prev,
-                          [field]: Number(e.target.value) || 0,
-                        }))
-                      }
-                      className={`${inputClass} text-lg`}
-                      placeholder="Defina a meta..."
-                    />
-                  </div>
-                );
-              })}
-              <div className="flex gap-4 pt-6">
+            <form onSubmit={handleMetasSubmit} className="space-y-6">
+              {METRICS.map((m) => (
+                <div key={m.key} className="space-y-2">
+                  <label className="flex items-center gap-3 text-white/90 font-semibold text-lg">
+                    {m.emoji} {m.label}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={metasForm[m.key as keyof Metas] || ''}
+                    onChange={(e) =>
+                      setMetasForm({
+                        ...metasForm,
+                        [m.key]: parseFloat(e.target.value) || 0,
+                      } as Metas)
+                    }
+                    className="w-full p-4 rounded-2xl bg-white/40 border border-white/50 text-white placeholder-white/60 font-mono text-xl focus:outline-none focus:ring-4 focus:ring-blue-500/40 transition-all shadow-xl hover:shadow-2xl"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-4 pt-6 border-t border-white/20">
                 <button
                   type="button"
                   onClick={() => setShowMetasModal(false)}
-                  className="flex-1 p-4 bg-gray-500/50 hover:bg-gray-600/50 text-white font-bold rounded-2xl border border-white/30 backdrop-blur-sm transition-all shadow-xl hover:shadow-gray-500/30 hover:scale-105"
+                  className="flex-1 bg-gray-500/30 hover:bg-gray-500/50 text-white py-4 rounded-2xl font-bold text-lg transition-all shadow-lg hover:shadow-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 p-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-2xl border border-white/30 backdrop-blur-sm shadow-xl hover:shadow-green-500/50 hover:scale-105 transition-all"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white py-4 rounded-2xl font-black text-lg shadow-2xl hover:shadow-3xl hover:scale-105 transition-all border border-blue-400/50"
                 >
                   Salvar Metas
                 </button>
@@ -597,16 +567,6 @@ export default function DiarioPage() {
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-      `}</style>
-    </>
+    </div>
   );
 }
