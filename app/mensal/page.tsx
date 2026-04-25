@@ -1,254 +1,94 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend
-} from 'recharts';
-
-type Status = 'PREMIUM' | 'REGULAR' | 'BASIC';
-
-interface VendaRecord {
-  id: number;
-  cliente: string;
-  liga: string;
-  volumeKg: number;
-  receita: number;
-  ticketMedio: number;
-  cotacao: number;
-  status: Status;
-}
-
 export default function MensalPage() {
-  const [vendas, setVendas] = useState<VendaRecord[]>([]);
-
-  useEffect(() => {
-    const mockData: VendaRecord[] = [
-      { id: 1, cliente: 'Indústria X', liga: 'Liga Ouro', volumeKg: 250, receita: 45000, ticketMedio: 180, cotacao: 8, status: 'PREMIUM' },
-      { id: 2, cliente: 'Fábrica Y', liga: 'Liga Prata', volumeKg: 180, receita: 32000, ticketMedio: 177.78, cotacao: 6, status: 'REGULAR' },
-      { id: 3, cliente: 'Indústria X', liga: 'Liga Bronze', volumeKg: 120, receita: 21000, ticketMedio: 175, cotacao: 4, status: 'PREMIUM' },
-      { id: 4, cliente: 'Cliente Z', liga: 'Liga Ouro', volumeKg: 300, receita: 52000, ticketMedio: 173.33, cotacao: 10, status: 'PREMIUM' },
-      { id: 5, cliente: 'Fábrica Y', liga: 'Liga Prata', volumeKg: 200, receita: 35000, ticketMedio: 175, cotacao: 7, status: 'REGULAR' },
-      { id: 6, cliente: 'Empresa W', liga: 'Liga Bronze', volumeKg: 150, receita: 26000, ticketMedio: 173.33, cotacao: 5, status: 'BASIC' },
-      { id: 7, cliente: 'Cliente Z', liga: 'Liga Ouro', volumeKg: 220, receita: 38000, ticketMedio: 172.73, cotacao: 9, status: 'PREMIUM' },
-      { id: 8, cliente: 'Empresa W', liga: 'Liga Prata', volumeKg: 160, receita: 28000, ticketMedio: 175, cotacao: 6, status: 'REGULAR' },
-      { id: 9, cliente: 'Indústria X', liga: 'Liga Bronze', volumeKg: 140, receita: 24000, ticketMedio: 171.43, cotacao: 5, status: 'PREMIUM' },
-      { id: 10, cliente: 'Fábrica Y', liga: 'Liga Ouro', volumeKg: 280, receita: 48000, ticketMedio: 171.43, cotacao: 8, status: 'REGULAR' }
-    ];
-    setVendas(mockData);
-  }, []);
-
-  const volumeTotal = useMemo(
-    () => vendas.reduce((sum, v) => sum + v.volumeKg, 0),
-    [vendas]
-  );
-
-  const receitaTotal = useMemo(
-    () => vendas.reduce((sum, v) => sum + v.receita, 0),
-    [vendas]
-  );
-
-  const ticketMedioGlobal = useMemo(
-    () => (vendas.length > 0 ? receitaTotal / vendas.length : 0),
-    [vendas, receitaTotal]
-  );
-
-  const totalCotações = useMemo(
-    () => vendas.reduce((sum, v) => sum + v.cotacao, 0),
-    [vendas]
-  );
-
-  const ligaData = useMemo(() => {
-    const grouped: { [key: string]: number } = {};
-    vendas.forEach((v) => {
-      grouped[v.liga] = (grouped[v.liga] || 0) + v.volumeKg;
-    });
-    return Object.entries(grouped).map(([name, value]) => ({
-      name,
-      value: Number(value),
-    }));
-  }, [vendas]);
-
-  const clientData = useMemo(() => {
-    const grouped: { [key: string]: number } = {};
-    vendas.forEach((v) => {
-      grouped[v.cliente] = (grouped[v.cliente] || 0) + v.receita;
-    });
-    return Object.entries(grouped)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([name, receita]) => ({ name, receita: Number(receita) }));
-  }, [vendas]);
-
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#FF6384'];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 overflow-hidden relative">
-      <div className="container mx-auto px-6 py-16 md:px-12 lg:px-24">
-        {/* Header */}
-        <div className="text-center mb-20">
-          <h1 className="text-5xl md:text-7xl font-black bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent drop-shadow-2xl leading-tight">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
             Fechamento Mensal
           </h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Visão geral do fechamento financeiro mensal. Acompanhe metas, receitas, despesas e lucros de forma simples e intuitiva.
+          </p>
         </div>
-
-        {/* KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-20">
-          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div className="relative">
-              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Volume Kg</p>
-              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
-                {volumeTotal.toLocaleString()}
-              </p>
-              <p className="text-white/50 text-sm mt-2">kg</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Card 1: Janeiro */}
+          <div className="bg-white shadow-xl rounded-2xl p-8 hover:shadow-2xl transition-shadow duration-300 border border-gray-100">
+            <h3 className="text-2xl font-semibold text-gray-900 mb-4">Janeiro</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Receita:</span>
+                <span className="font-bold text-green-600">R$ 15.000</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Despesas:</span>
+                <span className="font-bold text-red-600">R$ 10.000</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-gray-200">
+                <span className="text-gray-600 font-medium">Lucro:</span>
+                <span className="text-2xl font-bold text-blue-600">R$ 5.000</span>
+              </div>
             </div>
           </div>
-          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div className="relative">
-              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Receita</p>
-              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
-                {receitaTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </p>
+
+          {/* Card 2: Fevereiro */}
+          <div className="bg-white shadow-xl rounded-2xl p-8 hover:shadow-2xl transition-shadow duration-300 border border-gray-100">
+            <h3 className="text-2xl font-semibold text-gray-900 mb-4">Fevereiro</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Receita:</span>
+                <span className="font-bold text-green-600">R$ 18.000</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Despesas:</span>
+                <span className="font-bold text-red-600">R$ 12.000</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-gray-200">
+                <span className="text-gray-600 font-medium">Lucro:</span>
+                <span className="text-2xl font-bold text-blue-600">R$ 6.000</span>
+              </div>
             </div>
           </div>
-          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div className="relative">
-              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Ticket Médio</p>
-              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
-                {ticketMedioGlobal.toLocaleString('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                  minimumFractionDigits: 2,
-                })}
-              </p>
+
+          {/* Card 3: Meta vs Realizado */}
+          <div className="bg-white shadow-xl rounded-2xl p-8 hover:shadow-2xl transition-shadow duration-300 border border-gray-100 lg:col-span-1">
+            <h3 className="text-2xl font-semibold text-gray-900 mb-4">Meta Mensal vs Realizado</h3>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl">
+                <span className="text-lg font-medium text-gray-700">Meta:</span>
+                <span className="text-2xl font-bold text-yellow-600">R$ 20.000</span>
+              </div>
+              <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl">
+                <span className="text-lg font-medium text-gray-700">Realizado:</span>
+                <span className="text-2xl font-bold text-green-600">R$ 22.500</span>
+              </div>
+              <div className="text-center pt-4">
+                <span className="text-3xl font-bold text-emerald-600">+12.5%</span>
+                <p className="text-sm text-gray-500 mt-1">Acima da meta</p>
+              </div>
             </div>
           </div>
-          <div className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 hover:-translate-y-2 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            <div className="relative">
-              <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-3">Cotações</p>
-              <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
-                {totalCotações.toLocaleString()}
-              </p>
+
+          {/* Card 4: Projeção Março */}
+          <div className="bg-white shadow-xl rounded-2xl p-8 hover:shadow-2xl transition-shadow duration-300 border border-gray-100 md:col-span-2 lg:col-span-3">
+            <h3 className="text-2xl font-semibold text-gray-900 mb-4">Projeção para Março</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="p-8 bg-gradient-to-br from-purple-50 to-violet-50 rounded-2xl text-center border border-purple-100">
+                <div className="text-4xl font-bold text-purple-600 mb-2">R$ 25.000</div>
+                <div className="text-lg text-purple-700 font-medium">Receita Projetada</div>
+              </div>
+              <div className="p-8 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl text-center border border-indigo-100">
+                <div className="text-4xl font-bold text-indigo-600 mb-2">R$ 16.000</div>
+                <div className="text-lg text-indigo-700 font-medium">Despesas Projetadas</div>
+              </div>
             </div>
-          </div>
-        </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-20">
-          {/* Donut Chart - Ligas */}
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">Distribuição por Ligas</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart>
-                <Pie
-                  data={ligaData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  innerRadius={60}
-                >
-                  {ligaData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend wrapperStyle={{ color: 'white', fontSize: 14 }} verticalAlign="middle" align="right" />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Bar Chart - Clientes */}
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
-            <h3 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">Top Clientes por Receita</h3>
-            <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={clientData}>
-                <defs>
-                  <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#667eea" stopOpacity={0.8} />
-                    <stop offset="100%" stopColor="#764ba2" stopOpacity={0.8} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
-                  unit=" R$"
-                />
-                <Tooltip formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Receita']} />
-                <Bar dataKey="receita" fill="url(#colorReceita)" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-hidden">
-          <h3 className="text-2xl md:text-3xl font-bold text-white mb-8">Vendas Detalhadas</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/20">
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Cliente</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Liga</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Volume Kg</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Receita</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Ticket Médio</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Cotações</th>
-                  <th className="text-left py-4 px-6 font-semibold text-white/90">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vendas.map((venda) => (
-                  <tr key={venda.id} className="border-b border-white/10 hover:bg-white/5 transition-colors duration-200">
-                    <td className="py-4 px-6 font-medium text-white">{venda.cliente}</td>
-                    <td className="py-4 px-6 text-white/80">{venda.liga}</td>
-                    <td className="py-4 px-6 text-white/80">{venda.volumeKg.toLocaleString()} kg</td>
-                    <td className="py-4 px-6 text-white/80">
-                      R$ {venda.receita.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="py-4 px-6 text-white/80">
-                      R$ {venda.ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-4 px-6 text-white/80">{venda.cotacao.toLocaleString()}</td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`px-4 py-2 rounded-full text-xs font-bold border-2 shadow-lg ${
-                          venda.status === 'PREMIUM'
-                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-400/50'
-                            : venda.status === 'REGULAR'
-                            ? 'bg-blue-500/20 text-blue-400 border-blue-400/50'
-                            : 'bg-gray-500/20 text-gray-400 border-gray-400/50'
-                        }`}
-                      >
-                        {venda.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-emerald-600 bg-emerald-50 p-6 rounded-2xl">
+                Lucro Projetado: <span className="text-4xl">R$ 9.000</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
