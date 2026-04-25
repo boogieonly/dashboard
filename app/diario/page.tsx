@@ -1,114 +1,156 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
-import { Input } from './components/ui/input';
-import { Label } from './components/ui/label';
-import { Button } from './components/ui/button';
-import { Progress } from './components/ui/progress';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './components/ui/dialog';
 
-type NumericField = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
+type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
 
-type FormData = {
+type DailyEntry = {
+  date: string;
   faturamento: number;
   vendas: number;
   atrasos: number;
-  carteiraTotal: number;
-  previsaoMesAtual: number;
-  previsaoMesSeguinte: number;
-  observacoes: string;
+  carteira: number;
+  previsaoAtual: number;
+  previsaoProx: number;
 };
 
-type DiarioEntry = {
-  id: string;
+type Metas = Record<MetricKey, number>;
+
+type FormDataType = {
   date: string;
-} & FormData;
+} & Record<MetricKey, number>;
 
-type Metas = {
-  faturamento: number;
-  vendas: number;
-};
-
-type KpiConfig = {
+type Metric = {
+  key: MetricKey;
   label: string;
-  value: number;
-  prefix: string;
+  unit: string;
   color: string;
-  type: 'accum' | 'position';
-  key: NumericField;
 };
 
-const glassmorphism = 'bg-white/20 backdrop-blur-2xl border border-white/30 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300 group-hover:scale-[1.02]';
+const METRICS: Metric[] = [
+  { key: 'faturamento', label: 'Faturamento', unit: 'R$', color: 'from-blue-500 to-blue-600' },
+  { key: 'vendas', label: 'Vendas', unit: 'unid', color: 'from-green-500 to-green-600' },
+  { key: 'atrasos', label: 'Atrasos', unit: 'dias', color: 'from-orange-500 to-orange-600' },
+  { key: 'carteira', label: 'Carteira Total', unit: 'R$', color: 'from-purple-500 to-purple-600' },
+  { key: 'previsaoAtual', label: 'Previsão Mês Atual', unit: 'R$', color: 'from-indigo-500 to-indigo-600' },
+  { key: 'previsaoProx', label: 'Previsão Mês Seguinte', unit: 'R$', color: 'from-pink-500 to-pink-600' },
+];
 
-const Sparkline: React.FC<{ data: number[]; className?: string }> = ({ data, className }) => {
-  if (!data.length || data.every((v) => v === 0)) {
-    return <div className="h-8 flex items-center justify-center text-sm text-muted-foreground">—</div>;
+const defaultMetas: Metas = {
+  faturamento: 100000,
+  vendas: 1000,
+  atrasos: 0,
+  carteira: 50000,
+  previsaoAtual: 120000,
+  previsaoProx: 150000,
+};
+
+const defaultFormData: FormDataType = {
+  date: '',
+  faturamento: 0,
+  vendas: 0,
+  atrasos: 0,
+  carteira: 0,
+  previsaoAtual: 0,
+  previsaoProx: 0,
+};
+
+const icons = ['💰', '📦', '⚠️', '💳', '🔮', '📅'];
+
+const firstAccumKeys: MetricKey[] = ['faturamento', 'vendas', 'atrasos'];
+
+function getToday(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+function getMonthStart(): string {
+  const now = new Date();
+  now.setDate(1);
+  return now.toISOString().split('T')[0];
+}
+
+function sameMonth(date1: string, date2: string): boolean {
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
+}
+
+function computeAccum(entries: DailyEntry[], field: MetricKey, upToDate: string): number {
+  return entries
+    .filter(entry => sameMonth(entry.date, upToDate) && entry.date <= upToDate)
+    .reduce((sum, entry) => sum + (entry[field] || 0), 0);
+}
+
+function getLastSnapshotValue(entries: DailyEntry[], field: MetricKey): number {
+  const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return sorted[0]?.[field] || 0;
+}
+
+function getLast7Accum(entries: DailyEntry[], field: MetricKey, upToDate: string): number[] {
+  const today = new Date(upToDate);
+  const last7: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const accum = computeAccum(entries, field, dateStr);
+    last7.unshift(accum);
   }
+  return last7;
+}
 
-  const maxV = Math.max(...data);
-  const minV = Math.min(...data);
-  const range = maxV - minV || 1;
-  const height = 30;
-  const width = 120;
+function getLast7Snapshots(entries: DailyEntry[], field: MetricKey, upToDate: string): number[] {
+  const today = new Date(upToDate);
+  const last7: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() - i);
+    const dateStr = targetDate.toISOString().split('T')[0];
+    const candidates = entries.filter(e => e.date <= dateStr).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const val = candidates[0]?.[field] || 0;
+    last7.unshift(val);
+  }
+  return last7;
+}
 
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * (width - 4);
-    const y = height - 4 - ((v - minV) / range) * (height - 8);
+function Sparkline({ data }: { data: number[] }) {
+  if (!data.length) {
+    return <div className="h-5 bg-white/10 rounded-full" />;
+  }
+  const max = Math.max(...data, 1);
+  const points = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * 100;
+    const y = 20 - (val / max) * 18;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className={`w-full h-8 ${className || ''}`}
-      fill="none"
-    >
+    <svg viewBox="0 0 100 20" className="w-full h-5 flex-shrink-0">
       <polyline
         points={points}
-        stroke="currentColor"
+        stroke="rgba(255, 255, 255, 0.9)"
         strokeWidth="2.5"
+        fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
+        className="drop-shadow-lg"
       />
     </svg>
   );
-};
-
-function formatDate(isoDate: string): string {
-  const date = new Date(isoDate + 'T00:00:00');
-  const day = date.getDate().toString().padStart(2, '0');
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
 }
 
 export default function DiarioPage() {
-  const [entries, setEntries] = useState<DiarioEntry[]>([]);
-  const [metas, setMetas] = useState<Metas>({ faturamento: 0, vendas: 0 });
-  const [form, setForm] = useState<FormData>({
-    faturamento: 0,
-    vendas: 0,
-    atrasos: 0,
-    carteiraTotal: 0,
-    previsaoMesAtual: 0,
-    previsaoMesSeguinte: 0,
-    observacoes: '',
-  });
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<Metas>(defaultMetas);
+  const [formData, setFormData] = useState<FormDataType>(defaultFormData);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [showMetasModal, setShowMetasModal] = useState(false);
-  const [metasForm, setMetasForm] = useState<Metas>({ faturamento: 0, vendas: 0 });
-
-  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const today = getToday();
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
     const savedEntries = localStorage.getItem('diario-entries');
     if (savedEntries) {
       setEntries(JSON.parse(savedEntries));
     }
-
     const savedMetas = localStorage.getItem('diario-metas');
     if (savedMetas) {
       setMetas(JSON.parse(savedMetas));
@@ -123,373 +165,328 @@ export default function DiarioPage() {
     localStorage.setItem('diario-metas', JSON.stringify(metas));
   }, [metas]);
 
-  const currentMonthEntries = useMemo(() => {
-    const todayDate = new Date(today);
-    return entries.filter((e) => {
-      const entryDate = new Date(e.date);
-      return (
-        entryDate <= todayDate &&
-        entryDate.getFullYear() === todayDate.getFullYear() &&
-        entryDate.getMonth() === todayDate.getMonth()
-      );
-    });
-  }, [entries, today]);
+  const currentAccum = useMemo(() => ({
+    faturamento: computeAccum(entries, 'faturamento', today),
+    vendas: computeAccum(entries, 'vendas', today),
+    atrasos: computeAccum(entries, 'atrasos', today),
+    carteira: getLastSnapshotValue(entries, 'carteira'),
+    previsaoAtual: getLastSnapshotValue(entries, 'previsaoAtual'),
+    previsaoProx: getLastSnapshotValue(entries, 'previsaoProx'),
+  }), [entries, today]);
 
-  const currentSums = useMemo(() => ({
-    faturamento: currentMonthEntries.reduce((sum, e) => sum + e.faturamento, 0),
-    vendas: currentMonthEntries.reduce((sum, e) => sum + e.vendas, 0),
-    atrasos: currentMonthEntries.reduce((sum, e) => sum + e.atrasos, 0),
-  }), [currentMonthEntries]);
-
-  const getLastSnapshotValue = useCallback((field: NumericField): number => {
-    const sorted = entries.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return sorted[0]?.[field] ?? 0;
-  }, [entries]);
-
-  const lastCarteiraTotal = getLastSnapshotValue('carteiraTotal');
-  const lastPrevisaoMesAtual = getLastSnapshotValue('previsaoMesAtual');
-  const lastPrevisaoMesSeguinte = getLastSnapshotValue('previsaoMesSeguinte');
-
-  const getAccumSparkline = useCallback((field: NumericField): number[] => {
-    const todayDate = new Date();
-    const data: number[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const dayDate = new Date(todayDate);
-      dayDate.setDate(todayDate.getDate() - i);
-      const dayStr = dayDate.toISOString().split('T')[0];
-      const dayEntries = entries.filter((e) => {
-        const eDate = new Date(e.date);
-        return (
-          eDate <= dayDate &&
-          eDate.getFullYear() === todayDate.getFullYear() &&
-          eDate.getMonth() === todayDate.getMonth()
-        );
-      });
-      data.push(dayEntries.reduce((sum, e) => sum + e[field], 0));
-    }
-    return data;
-  }, [entries]);
-
-  const getPositionSparkline = useCallback((field: NumericField): number[] => {
-    const sorted = entries
-      .slice()
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 7);
-    return sorted.map((e) => e[field]).reverse();
-  }, [entries]);
-
-  const kpiConfigs: KpiConfig[] = useMemo(
-    () => [
-      {
-        label: 'Faturamento',
-        value: currentSums.faturamento,
-        prefix: 'R$ ',
-        color: 'emerald',
-        type: 'accum',
-        key: 'faturamento',
-      },
-      {
-        label: 'Vendas',
-        value: currentSums.vendas,
-        prefix: 'R$ ',
-        color: 'blue',
-        type: 'accum',
-        key: 'vendas',
-      },
-      {
-        label: 'Atrasos',
-        value: currentSums.atrasos,
-        prefix: '',
-        color: 'red',
-        type: 'accum',
-        key: 'atrasos',
-      },
-      {
-        label: 'Carteira Total',
-        value: lastCarteiraTotal,
-        prefix: 'R$ ',
-        color: 'violet',
-        type: 'position',
-        key: 'carteiraTotal',
-      },
-      {
-        label: 'Previsão Mês Atual',
-        value: lastPrevisaoMesAtual,
-        prefix: 'R$ ',
-        color: 'indigo',
-        type: 'position',
-        key: 'previsaoMesAtual',
-      },
-      {
-        label: 'Previsão Mês Seguinte',
-        value: lastPrevisaoMesSeguinte,
-        prefix: 'R$ ',
-        color: 'amber',
-        type: 'position',
-        key: 'previsaoMesSeguinte',
-      },
-    ],
-    [currentSums, lastCarteiraTotal, lastPrevisaoMesAtual, lastPrevisaoMesSeguinte]
+  const sparklineData = useMemo(() =>
+    METRICS.map((metric) =>
+      firstAccumKeys.includes(metric.key as MetricKey)
+        ? getLast7Accum(entries, metric.key as MetricKey, today)
+        : getLast7Snapshots(entries, metric.key as MetricKey, today)
+    ),
+    [entries, today]
   );
 
-  const handleFormChange = (field: keyof FormData, value: string | number) => {
-    setForm((prev) => ({ ...prev, [field]: typeof value === 'number' ? value : parseFloat(value) || 0 }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const newEntry: DiarioEntry = {
-      id: crypto.randomUUID(),
-      date: today,
-      ...form,
+    const entryDate = formData.date || getToday();
+    const newEntry: DailyEntry = {
+      date: entryDate,
+      ...formData,
     };
-    setEntries((prev) => [newEntry, ...prev]);
-    setForm({
-      faturamento: 0,
-      vendas: 0,
-      atrasos: 0,
-      carteiraTotal: 0,
-      previsaoMesAtual: 0,
-      previsaoMesSeguinte: 0,
-      observacoes: '',
+    if (editingId) {
+      setEntries((prev) => prev.map((e) => (e.date === editingId ? newEntry : e)));
+      setEditingId(null);
+    } else {
+      setEntries((prev) => [...prev, newEntry]);
+    }
+    setFormData(defaultFormData);
+  }, [formData, editingId]);
+
+  const handleEdit = useCallback((entry: DailyEntry) => {
+    setFormData({
+      date: entry.date,
+      faturamento: entry.faturamento,
+      vendas: entry.vendas,
+      atrasos: entry.atrasos,
+      carteira: entry.carteira,
+      previsaoAtual: entry.previsaoAtual,
+      previsaoProx: entry.previsaoProx,
     });
+    setEditingId(entry.date);
+  }, []);
+
+  const handleDelete = useCallback((date: string) => {
+    setEntries((prev) => prev.filter((e) => e.date !== date));
+  }, []);
+
+  const handleMetaChange = useCallback((key: MetricKey, value: string) => {
+    setMetas((prev) => ({ ...prev, [key]: parseFloat(value) || 0 }));
+  }, []);
+
+  const formatDate = (dateStr: string): string => {
+    return new Date(dateStr).toLocaleDateString('pt-BR');
   };
 
-  const handleMetasChange = (field: keyof Metas, value: string) => {
-    setMetasForm((prev) => ({ ...prev, [field]: parseFloat(value) || 0 }));
+  const formatNumber = (num: number, unit: string): string => {
+    if (unit === 'R$') {
+      return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+    }
+    return num.toLocaleString('pt-BR') + (unit ? ` ${unit}` : '');
   };
 
-  const handleSaveMetas = () => {
-    setMetas(metasForm);
-    setShowMetasModal(false);
+  const getProgress = (accum: number, meta: number): number => {
+    return Math.min((accum / meta) * 100, 100);
   };
-
-  const currentMonthName = new Date().toLocaleDateString('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const sortedEntries = useMemo(
-    () => entries.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [entries]
-  );
-
-  const formFields = [
-    { key: 'faturamento' as keyof FormData, label: 'Faturamento (R$)' },
-    { key: 'vendas' as keyof FormData, label: 'Vendas (R$)' },
-    { key: 'atrasos' as keyof FormData, label: 'Atrasos' },
-    { key: 'carteiraTotal' as keyof FormData, label: 'Carteira Total (R$)' },
-    { key: 'previsaoMesAtual' as keyof FormData, label: 'Previsão Mês Atual (R$)' },
-    { key: 'previsaoMesSeguinte' as keyof FormData, label: 'Previsão Mês Seguinte (R$)' },
-  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 py-12">
-      <div className="container mx-auto px-6 max-w-7xl space-y-16">
-        {/* Seção 1 - KPI Cards */}
-        <section>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-12 text-center">
-            Dashboard Diário
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 md:p-12">
+      <div className="max-w-7xl mx-auto">
+        <header className="text-center mb-12">
+          <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent mb-4 animate-pulse">
+            📊 Diário Financeiro
           </h1>
-          <div className="grid grid-cols-3 grid-rows-2 gap-8">
-            {kpiConfigs.map((kpi, index) => {
-              const sparkData =
-                kpi.type === 'accum'
-                  ? getAccumSparkline(kpi.key)
-                  : getPositionSparkline(kpi.key);
-              const displayValue =
-                kpi.prefix === 'R$ '
-                  ? kpi.value.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })
-                  : kpi.value.toLocaleString();
+          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+            Acompanhe seus KPIs diários com precisão e defina metas mensais.
+          </p>
+        </header>
+
+        {/* Seção 1 - KPI Cards */}
+        <section className="mb-16">
+          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">
+            📈 KPIs do Mês (Acumulado até {formatDate(today)})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {METRICS.map((metric, idx) => {
+              const key = metric.key as MetricKey;
+              const accum = currentAccum[key];
+              const prog = getProgress(accum, metas[key]);
               return (
-                <Card key={kpi.label} className={glassmorphism}>
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg font-semibold text-white/90">
-                      {kpi.label}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0 space-y-4">
-                    <div className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-${kpi.color}-400 to-${kpi.color}-600`}>
-                      {displayValue}
+                <div
+                  key={metric.key}
+                  className="group relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl hover:shadow-purple-500/25 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent rounded-3xl" />
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className={`w-12 h-12 rounded-2xl bg-gradient-to-r ${metric.color} flex items-center justify-center shadow-lg shadow-black/30`}>
+                        {icons[idx]}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMetasModal(true)}
+                        className="text-xl hover:scale-110 transition-all duration-200 hover:text-white text-slate-400"
+                        title="Configurar Metas"
+                      >
+                        ⚙️
+                      </button>
                     </div>
-                    <Sparkline data={sparkData} className={`text-${kpi.color}-400`} />
-                  </CardContent>
-                </Card>
+                    <h3 className="text-2xl font-bold text-white mb-2 group-hover:text-slate-200 transition-colors">
+                      {metric.label}
+                    </h3>
+                    <div className="text-4xl md:text-5xl font-black bg-gradient-to-r from-white via-slate-200 to-slate-300 bg-clip-text text-transparent mb-4 leading-tight">
+                      {formatNumber(accum, metric.unit)}
+                    </div>
+                    <div className="h-5 mb-4">
+                      <Sparkline data={sparklineData[idx]} />
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-400">Meta: {formatNumber(metas[key], metric.unit)}</span>
+                      <div className="w-20 bg-white/10 rounded-full h-3 overflow-hidden border border-white/20">
+                        <div
+                          className={`h-full bg-gradient-to-r ${metric.color} rounded-full transition-all duration-1000 ease-out shadow-inner`}
+                          style={{ width: `${prog}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               );
             })}
           </div>
         </section>
 
-        {/* Resumo Mensal */}
-        <section>
-          <Card className={glassmorphism + ' col-span-full'}>
-            <CardHeader>
-              <CardTitle className="text-2xl font-bold">Resumo Mensal - {currentMonthName}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <div className="text-xl font-semibold">Faturamento</div>
-                <div className="text-2xl font-bold text-emerald-600">
-                  R$ {currentSums.faturamento.toLocaleString()}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Meta: R$ {metas.faturamento.toLocaleString()}
-                </div>
-                <Progress
-                  value={metas.faturamento > 0 ? Math.min(100, (currentSums.faturamento / metas.faturamento) * 100) : 0}
-                  className="h-3"
+        {/* Formulário */}
+        <section className="mb-16">
+          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">
+            {editingId ? '✏️ Editar Registro' : '➕ Novo Registro Diário'}
+          </h2>
+          <form onSubmit={handleSubmit} className="max-w-2xl mx-auto bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-6">
+              <div>
+                <label className="block text-slate-300 mb-2 font-medium">Data *</label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all shadow-lg"
+                  required
                 />
               </div>
-              <div className="space-y-2">
-                <div className="text-xl font-semibold">Vendas</div>
-                <div className="text-2xl font-bold text-blue-600">
-                  R$ {currentSums.vendas.toLocaleString()}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Meta: R$ {metas.vendas.toLocaleString()}
-                </div>
-                <Progress
-                  value={metas.vendas > 0 ? Math.min(100, (currentSums.vendas / metas.vendas) * 100) : 0}
-                  className="h-3"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Formulário */}
-          <Card className={glassmorphism}>
-            <CardHeader>
-              <CardTitle className="text-2xl">Registro Diário ({today})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {formFields.map(({ key, label }) => (
-                  <div key={key as string} className="space-y-1.5">
-                    <Label>{label}</Label>
-                    <Input
+              {METRICS.map((metric) => {
+                const key = metric.key as MetricKey;
+                return (
+                  <div key={metric.key}>
+                    <label className="block text-slate-300 mb-2 font-medium">{metric.label}</label>
+                    <input
                       type="number"
-                      step="0.01"
-                      placeholder={label}
-                      value={form[key as keyof FormData] ?? ''}
-                      onChange={(e) => handleFormChange(key as keyof FormData, e.target.value)}
-                      className="text-right"
+                      step="any"
+                      value={formData[key]}
+                      onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-4 py-3 bg-white/20 border border-white/30 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all shadow-lg"
+                      placeholder="0"
                     />
                   </div>
-                ))}
-                <div className="space-y-1.5">
-                  <Label>Observações</Label>
-                  <Input
-                    type="text"
-                    placeholder="Observações opcionais..."
-                    value={form.observacoes}
-                    onChange={(e) => handleFormChange('observacoes', e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  Registrar Hoje
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* Modal Metas Trigger */}
-          <Card className={glassmorphism}>
-            <CardHeader>
-              <CardTitle className="text-2xl">Metas Mensais</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <Button
-                onClick={() => {
-                  setMetasForm(metas);
-                  setShowMetasModal(true);
-                }}
-                className="w-full"
+                );
+              })}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                type="submit"
+                className="px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-2xl shadow-2xl hover:shadow-blue-500/50 hover:scale-105 transition-all duration-300 flex-1 sm:w-auto"
               >
-                Gerenciar Metas
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+                {editingId ? 'Atualizar Registro' : 'Salvar Registro'}
+              </button>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(defaultFormData);
+                    setEditingId(null);
+                  }}
+                  className="px-8 py-4 bg-slate-600/50 hover:bg-slate-500/50 text-slate-300 font-bold rounded-2xl shadow-xl transition-all duration-300 flex-1 sm:w-auto border border-slate-400/30"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
 
         {/* Histórico */}
         <section>
-          <Card className={glassmorphism}>
-            <CardHeader>
-              <CardTitle className="text-2xl">Histórico</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {sortedEntries.map((entry) => (
-                  <div key={entry.id} className="p-4 border border-white/20 rounded-2xl bg-white/10 backdrop-blur-sm">
-                    <div className="font-bold text-lg mb-2">{formatDate(entry.date)}</div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
-                      <div>Fat: R$ {entry.faturamento.toLocaleString()}</div>
-                      <div>Ven: R$ {entry.vendas.toLocaleString()}</div>
-                      <div>Atr: {entry.atrasos.toLocaleString()}</div>
-                      <div>Cart: R$ {entry.carteiraTotal.toLocaleString()}</div>
-                      <div>Prev Atual: R$ {entry.previsaoMesAtual.toLocaleString()}</div>
-                      <div>Prev Seg: R$ {entry.previsaoMesSeguinte.toLocaleString()}</div>
-                    </div>
-                    {entry.observacoes && (
-                      <div className="mt-2 text-xs italic text-muted-foreground">
-                        {entry.observacoes}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {sortedEntries.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    Nenhum registro ainda.
-                  </div>
+          <h2 className="text-3xl font-bold text-white mb-8 text-center animate-fade-in">📜 Histórico do Mês</h2>
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl overflow-x-auto">
+            <table className="w-full text-sm text-slate-300 min-w-max">
+              <thead>
+                <tr className="border-b border-white/20">
+                  <th className="text-left p-4 font-bold text-white">Data</th>
+                  {METRICS.map((metric) => (
+                    <th key={metric.key} className="px-4 py-4 text-center font-bold text-white">
+                      {metric.label}
+                    </th>
+                  ))}
+                  <th className="text-right p-4 font-bold text-white pr-8">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries
+                  .filter((e) => sameMonth(e.date, today))
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map((entry) => (
+                    <tr key={entry.date} className="hover:bg-white/10 transition-colors border-b border-white/10 last:border-b-0">
+                      <td className="p-4 font-semibold text-white pl-0">{formatDate(entry.date)}</td>
+                      {METRICS.map((metric) => {
+                        const key = metric.key as MetricKey;
+                        return (
+                          <td key={metric.key} className="px-4 py-4 text-center font-mono">
+                            {formatNumber(entry[key], metric.unit)}
+                          </td>
+                        );
+                      })}
+                      <td className="p-4 text-right pr-8 space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(entry)}
+                          className="px-4 py-2 bg-blue-500/80 hover:bg-blue-400 text-white rounded-xl shadow-lg hover:shadow-blue-400/50 transition-all duration-200 text-sm font-medium"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(entry.date)}
+                          className="px-4 py-2 bg-red-500/80 hover:bg-red-400 text-white rounded-xl shadow-lg hover:shadow-red-400/50 transition-all duration-200 text-sm font-medium"
+                        >
+                          Deletar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                {entries.filter((e) => sameMonth(e.date, today)).length === 0 && (
+                  <tr>
+                    <td colSpan={METRICS.length + 2} className="p-12 text-center text-slate-400 font-medium">
+                      Nenhum registro este mês. Adicione o primeiro!
+                    </td>
+                  </tr>
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
 
       {/* Modal Metas */}
-      <Dialog open={showMetasModal} onOpenChange={setShowMetasModal}>
-        <DialogContent className="max-w-md backdrop-blur-2xl bg-white/90">
-          <DialogHeader>
-            <DialogTitle>Definir Metas Mensais</DialogTitle>
-            <DialogDescription>Metas para o mês atual.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-1.5">
-              <Label>Faturamento (R$)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={metasForm.faturamento}
-                onChange={(e) => handleMetasChange('faturamento', e.target.value)}
-                className="text-right"
-              />
+      {showMetasModal && (
+        <div
+          className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50"
+          onClick={() => setShowMetasModal(false)}
+        >
+          <div
+            className="bg-white/20 backdrop-blur-2xl border border-white/40 rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-3xl hover:shadow-4xl transition-all duration-300 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-3xl font-bold text-white">⚙️ Configurar Metas Mensais</h3>
+              <button
+                type="button"
+                onClick={() => setShowMetasModal(false)}
+                className="text-3xl hover:scale-110 transition-transform text-slate-400 hover:text-white ml-4"
+              >
+                ✕
+              </button>
             </div>
-            <div className="space-y-1.5">
-              <Label>Vendas (R$)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={metasForm.vendas}
-                onChange={(e) => handleMetasChange('vendas', e.target.value)}
-                className="text-right"
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {METRICS.map((metric) => {
+                const key = metric.key as MetricKey;
+                return (
+                  <div key={metric.key} className="space-y-2">
+                    <label className="block text-slate-300 font-semibold text-lg">{metric.label}</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={metas[key]}
+                      onChange={(e) => handleMetaChange(key, e.target.value)}
+                      className="w-full px-6 py-4 bg-white/30 border border-white/50 rounded-2xl text-white placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-white/30 transition-all text-xl font-mono tracking-wider shadow-xl hover:shadow-2xl hover:border-white/70"
+                      placeholder="Defina a meta..."
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-12 pt-8 border-t border-white/20 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowMetasModal(false)}
+                className="px-12 py-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-bold rounded-3xl shadow-2xl hover:shadow-emerald-500/50 hover:scale-105 transition-all duration-300 text-xl tracking-wide"
+              >
+                ✅ Metas Salvas!
+              </button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMetasModal(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveMetas}>Salvar Metas</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+      `}</style>
     </div>
   );
 }
