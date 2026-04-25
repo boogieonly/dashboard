@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
-type OmitDate = Omit<DailyEntry, 'date'>;
-
-interface DailyEntry {
+type DailyEntry = {
   date: string;
   faturamento: number;
   atrasos: number;
@@ -12,92 +10,73 @@ interface DailyEntry {
   carteiraTotal: number;
   previsaoMesAtual: number;
   previsaoMesSeguinte: number;
-}
-
-type Kpi = {
-  key: keyof OmitDate;
-  label: string;
-  color: string;
 };
 
-const kpis: Kpi[] = [
-  { key: 'faturamento', label: 'Faturamento', color: 'bg-gradient-to-r from-blue-500 to-blue-600' },
-  { key: 'atrasos', label: 'Atrasos', color: 'bg-gradient-to-r from-red-500 to-red-600' },
-  { key: 'vendas', label: 'Vendas', color: 'bg-gradient-to-r from-green-500 to-green-600' },
-  { key: 'carteiraTotal', label: 'Carteira Total', color: 'bg-gradient-to-r from-purple-500 to-purple-600' },
-  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', color: 'bg-gradient-to-r from-orange-500 to-orange-600' },
-  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', color: 'bg-gradient-to-r from-indigo-500 to-indigo-600' },
-];
+type KPICardProps = {
+  title: string;
+  value: number;
+};
 
-const numFields = ['faturamento', 'atrasos', 'vendas', 'carteiraTotal', 'previsaoMesAtual', 'previsaoMesSeguinte'] as const;
-type NumKey = typeof numFields[number];
+const formatCurrency = (value: number): string => {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value);
+};
 
-const DiarioPage: React.FC = () => {
+const dateBr = (isoDate: string): string => {
+  const d = new Date(isoDate);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const KPICard: React.FC<KPICardProps> = ({ title, value }) => (
+  <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+    <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wide">{title}</h3>
+    <p className="mt-1 text-3xl font-bold text-gray-900">{formatCurrency(value)}</p>
+  </div>
+);
+
+export default function DiarioPage() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [currentEntry, setCurrentEntry] = useState<DailyEntry | null>(null);
   const [formData, setFormData] = useState<Partial<DailyEntry>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const getToday = (): string => new Date().toISOString().split('T')[0];
-
-  const dateBr = (iso: string): string => {
-    const date = new Date(iso + 'T00:00:00');
-    if (isNaN(date.getTime())) return iso;
-    return date.toLocaleDateString('pt-BR');
-  };
-
-  const parseDateBr = (brStr: string): string => {
-    if (!brStr) return '';
-    const parts = brStr.split('/');
-    if (parts.length !== 3) return '';
-    const [day, month, year] = parts.map(p => parseInt(p.trim()));
-    if (isNaN(day) || isNaN(month) || isNaN(year) || month < 1 || month > 12 || day < 1 || day > 31) return '';
-    const date = new Date(year, month - 1, day);
-    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
-    return date.toISOString().split('T')[0];
-  };
-
-  const formatNumber = (num: number): string => num.toLocaleString('pt-BR');
-
   // Load from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('diario-entries');
+      const saved = localStorage.getItem('dailyEntries');
       if (saved) {
         try {
-          const parsed: DailyEntry[] = JSON.parse(saved);
-          const sorted = parsed.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setEntries(sorted);
-        } catch {
-          // ignore invalid data
+          const parsed: DailyEntry[] = JSON.parse(saved).sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          setEntries(parsed);
+        } catch (e) {
+          console.error('Error loading entries:', e);
         }
       }
     }
   }, []);
 
-  // Save to localStorage
+  // Update currentEntry when entries change
   useEffect(() => {
-    if (entries.length > 0 && typeof window !== 'undefined') {
-      localStorage.setItem('diario-entries', JSON.stringify(entries));
+    if (entries.length > 0) {
+      setCurrentEntry(entries[0]);
+    } else {
+      setCurrentEntry(null);
     }
   }, [entries]);
 
-  // Update currentEntry reactively
-  const today = getToday();
+  // Persist to localStorage
   useEffect(() => {
-    const curr = entries.find((e) => e.date === today);
-    setCurrentEntry(curr || null);
-  }, [entries, today]);
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const parsed = parseDateBr(e.target.value);
-    setFormData((prev) => ({ ...prev, date: parsed }));
-  };
-
-  const handleNumChange = (key: NumKey) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
-    setFormData((prev) => ({ ...prev, [key]: val }));
-  };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dailyEntries', JSON.stringify(entries));
+    }
+  }, [entries]);
 
   const resetForm = () => {
     setFormData({});
@@ -109,221 +88,244 @@ const DiarioPage: React.FC = () => {
     setEditingId(entry.date);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleDelete = (date: string) => {
+    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
+      setEntries((prev) => prev.filter((e) => e.date !== date));
+      if (editingId === date) {
+        resetForm();
+      }
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.date) {
-      alert('Data é obrigatória!');
+      alert('Data é obrigatória');
       return;
     }
+
     const entry: DailyEntry = {
       date: formData.date,
-      faturamento: (formData as any).faturamento ?? 0,
-      atrasos: (formData as any).atrasos ?? 0,
-      vendas: (formData as any).vendas ?? 0,
-      carteiraTotal: (formData as any).carteiraTotal ?? 0,
-      previsaoMesAtual: (formData as any).previsaoMesAtual ?? 0,
-      previsaoMesSeguinte: (formData as any).previsaoMesSeguinte ?? 0,
+      faturamento: formData.faturamento ?? 0,
+      atrasos: formData.atrasos ?? 0,
+      vendas: formData.vendas ?? 0,
+      carteiraTotal: formData.carteiraTotal ?? 0,
+      previsaoMesAtual: formData.previsaoMesAtual ?? 0,
+      previsaoMesSeguinte: formData.previsaoMesSeguinte ?? 0,
     };
+
+    const existingIndex = entries.findIndex((e) => e.date === formData.date);
     let newEntries: DailyEntry[];
-    if (editingId) {
-      newEntries = entries.map((e) => (e.date === editingId ? entry : e));
+    if (existingIndex !== -1) {
+      newEntries = [...entries];
+      newEntries[existingIndex] = entry;
     } else {
-      newEntries = [...entries.filter((e) => e.date !== entry.date), entry];
+      newEntries = [entry, ...entries];
     }
-    const sorted = newEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    setEntries(sorted);
+    setEntries(newEntries);
     resetForm();
   };
 
-  const deleteData = (dateToDelete: string) => {
-    if (confirm(`Deletar entrada de ${dateBr(dateToDelete)}?`)) {
-      setEntries(entries.filter((e) => e.date !== dateToDelete));
-    }
-  };
-
-  const Sparkline: React.FC<{ data: number[] }> = ({ data }) => {
-    if (data.length === 0) {
-      return <div className="h-6 bg-gray-200 rounded" />;
-    }
-    const maxV = Math.max(...data);
-    const minV = Math.min(...data);
-    const range = maxV - minV || 1;
-    const width = 120;
-    const height = 24;
-    const points = data
-      .map((v, i) => {
-        const x = (i / (data.length - 1)) * width;
-        const y = height - (height * (v - minV) / range);
-        return `${x},${y}`;
-      })
-      .join(' ');
-    return (
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-6 fill-none">
-        <polyline
-          points={points}
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="opacity-80"
-        />
-      </svg>
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-bold text-center text-gray-900 mb-12">Diário</h1>
+    <div className="container mx-auto p-6 max-w-7xl">
+      <h1 className="text-4xl font-bold text-gray-900 mb-12 text-center">Diário Financeiro</h1>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {kpis.map((kpi) => {
-            const value = currentEntry ? (currentEntry[kpi.key] ?? 0) : 0;
-            const historyData = [...entries]
-              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-              .map((e) => (e[kpi.key] ?? 0) as number)
-              .slice(-30);
-            return (
-              <div key={kpi.key} className={`p-6 rounded-2xl shadow-xl ${kpi.color} text-white`}>
-                <h3 className="text-sm font-semibold uppercase tracking-wide opacity-90 mb-2">
-                  {kpi.label}
-                </h3>
-                <p className="text-3xl lg:text-4xl font-bold mb-4">
-                  {formatNumber(value)}
-                </p>
-                <Sparkline data={historyData} />
-              </div>
-            );
-          })}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+        <div>
+          <h2 className="text-2xl font-semibold mb-6">Entrada Atual</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+            <KPICard title="Faturamento" value={currentEntry?.faturamento ?? 0} />
+            <KPICard title="Atrasos" value={currentEntry?.atrasos ?? 0} />
+            <KPICard title="Vendas" value={currentEntry?.vendas ?? 0} />
+            <KPICard title="Carteira Total" value={currentEntry?.carteiraTotal ?? 0} />
+            <KPICard title="Previsão Mês Atual" value={currentEntry?.previsaoMesAtual ?? 0} />
+            <KPICard title="Previsão Mês Seguinte" value={currentEntry?.previsaoMesSeguinte ?? 0} />
+          </div>
         </div>
 
-        {/* Historical Table */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-12">
-          <div className="p-8 border-b border-gray-200">
-            <h2 className="text-2xl font-bold text-gray-900">Histórico</h2>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <h2 className="text-2xl font-semibold">
+            {editingId ? 'Editar Entrada' : 'Nova Entrada'}
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Data <span className="text-xs text-gray-500">(dd/mm/aaaa)</span>
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.date || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+                required
+              />
+              {formData.date && (
+                <p className="text-xs text-gray-500 mt-1">{dateBr(formData.date)}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Faturamento</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.faturamento?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    faturamento: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Atrasos</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.atrasos?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    atrasos: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Vendas</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.vendas?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    vendas: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Carteira Total</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.carteiraTotal?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    carteiraTotal: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Previsão Mês Atual</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.previsaoMesAtual?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    previsaoMesAtual: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Previsão Mês Seguinte</label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={formData.previsaoMesSeguinte?.toString() ?? ''}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    previsaoMesSeguinte: parseFloat(e.target.value) || 0,
+                  }))
+                }
+              />
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-gray-200">
+          <div className="flex gap-4">
+            <button
+              type="submit"
+              className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              {editingId ? 'Atualizar' : 'Salvar'}
+            </button>
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex-1 bg-gray-500 text-white py-3 px-6 rounded-lg font-medium hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-semibold mb-6">Histórico</h2>
+        {entries.length === 0 ? (
+          <p className="text-gray-500 text-center py-12 text-lg">Nenhuma entrada cadastrada ainda.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Data</th>
-                  {kpis.map((kpi) => (
-                    <th
-                      key={kpi.key}
-                      className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider"
-                    >
-                      {kpi.label}
-                    </th>
-                  ))}
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Ações
-                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Faturamento</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Atrasos</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendas</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Carteira Total</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Previsão Mês Atual</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Previsão Mês Seguinte</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {entries.map((e) => (
-                  <tr key={e.date} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {dateBr(e.date)}
-                    </td>
-                    {numFields.map((field) => (
-                      <td key={field} className="px-6 py-4 whitespace-nowrap text-sm font-mono text-right text-gray-900">
-                        {formatNumber(e[field] as number)}
-                      </td>
-                    ))}
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <tbody className="bg-white divide-y divide-gray-200">
+                {entries.map((entry) => (
+                  <tr key={entry.date} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{dateBr(entry.date)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.faturamento)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.atrasos)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.vendas)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.carteiraTotal)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.previsaoMesAtual)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCurrency(entry.previsaoMesSeguinte)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button
                         type="button"
-                        onClick={() => handleEdit(e)}
-                        className="text-blue-600 hover:text-blue-900 font-medium mr-4 transition-colors"
+                        onClick={() => handleEdit(entry)}
+                        className="text-blue-600 hover:text-blue-900 mr-4 font-medium"
                       >
                         Editar
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteData(e.date)}
-                        className="text-red-600 hover:text-red-900 font-medium transition-colors"
+                        onClick={() => handleDelete(entry.date)}
+                        className="text-red-600 hover:text-red-900 font-medium"
                       >
-                        Excluir
+                        Deletar
                       </button>
                     </td>
                   </tr>
                 ))}
-                {entries.length === 0 && (
-                  <tr>
-                    <td colSpan={kpis.length + 2} className="px-6 py-12 text-center text-gray-500">
-                      Nenhuma entrada registrada.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Form */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
-            {editingId ? `Editar ${dateBr(editingId)}` : 'Nova Entrada'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div>
-                <label htmlFor="date" className="block text-sm font-semibold text-gray-900 mb-2">
-                  Data *
-                </label>
-                <input
-                  id="date"
-                  type="text"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  value={formData.date ? dateBr(formData.date) : ''}
-                  onChange={handleDateChange}
-                  placeholder="dd/mm/aaaa"
-                  maxLength={10}
-                />
-              </div>
-              {numFields.map((field) => {
-                const kpi = kpis.find((k) => k.key === field);
-                const label = kpi ? kpi.label : field;
-                return (
-                  <div key={field}>
-                    <label htmlFor={field} className="block text-sm font-semibold text-gray-900 mb-2">
-                      {label}
-                    </label>
-                    <input
-                      id={field}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                      value={(formData[field as keyof DailyEntry] ?? 0).toString()}
-                      onChange={handleNumChange(field)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 pt-4">
-              <button
-                type="submit"
-                className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all"
-              >
-                {editingId ? 'Atualizar' : 'Adicionar Hoje'}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="flex-1 bg-gray-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-gray-600 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all"
-              >
-                Limpar
-              </button>
-            </div>
-          </form>
-        </div>
+        )}
       </div>
     </div>
   );
-};
-
-export default DiarioPage;
+}
