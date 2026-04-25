@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect, useMemo, useCallback } from 'react';
 
 type IndicatorKey = "faturamento" | "vendas" | "atrasos" | "carteiraTotal" | "previsaoMesAtual" | "previsaoMesSeguinte";
