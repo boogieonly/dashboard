@@ -1,140 +1,120 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
-type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
+type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
 
 interface DailyEntry {
   date: string;
-  faturamento: number;
-  vendas: number;
-  atrasos: number;
-  carteira: number;
-  previsaoAtual: number;
-  previsaoProx: number;
+  [K in MetricKey]: number;
 }
 
 type Metas = {
-  faturamento: number;
-  vendas: number;
-  atrasos: number;
-  carteira: number;
-  previsaoAtual: number;
-  previsaoProx: number;
+  [K in MetricKey]: number;
 };
 
-type Metric = {
+interface Metric {
   key: MetricKey;
   label: string;
   emoji: string;
   color: string;
-};
+}
+
+type FormDataType = DailyEntry;
 
 const METRICS: Metric[] = [
-  { key: 'faturamento', label: 'Faturamento', emoji: '💰', color: 'blue' },
-  { key: 'vendas', label: 'Vendas', emoji: '📦', color: 'green' },
-  { key: 'atrasos', label: 'Atrasos', emoji: '⚠️', color: 'orange' },
-  { key: 'carteira', label: 'Carteira', emoji: '💳', color: 'cyan' },
-  { key: 'previsaoAtual', label: 'Previsão Atual', emoji: '🔮', color: 'teal' },
-  { key: 'previsaoProx', label: 'Previsão Próx', emoji: '📈', color: 'sky' },
+  { key: 'faturamento', label: 'Faturamento', emoji: '💰', color: 'stroke-emerald-500' },
+  { key: 'vendas', label: 'Vendas', emoji: '📈', color: 'stroke-blue-500' },
+  { key: 'atrasos', label: 'Atrasos', emoji: '⚠️', color: 'stroke-amber-500' },
+  { key: 'carteiraTotal', label: 'Carteira Total', emoji: '💼', color: 'stroke-slate-600' },
+  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', emoji: '🔮', color: 'stroke-cyan-500' },
+  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', emoji: '📅', color: 'stroke-sky-500' },
 ];
 
 const defaultMetas: Metas = {
-  faturamento: 10000,
-  vendas: 100,
-  atrasos: 5,
-  carteira: 5000,
-  previsaoAtual: 12000,
-  previsaoProx: 15000,
+  faturamento: 1000000,
+  vendas: 200,
+  atrasos: 10,
+  carteiraTotal: 2000000,
+  previsaoMesAtual: 1100000,
+  previsaoMesSeguinte: 1200000,
 };
 
-function getToday(): string {
-  return new Date().toISOString().split('T')[0];
-}
+const getToday = (): string => new Date().toISOString().split('T')[0];
 
-function getMonthStart(): string {
-  const date = new Date();
+const getMonthStart = (dateStr: string): string => {
+  const date = new Date(dateStr);
   date.setDate(1);
   date.setHours(0, 0, 0, 0);
   return date.toISOString().split('T')[0];
-}
+};
 
-function sameMonth(date1: string, date2: string): boolean {
-  const d1 = new Date(date1 + 'T00:00:00');
-  const d2 = new Date(date2 + 'T00:00:00');
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
-}
+const sameMonth = (date1: string, date2: string): boolean =>
+  getMonthStart(date1) === getMonthStart(date2);
 
-function computeAccum(entries: DailyEntry[], metric: MetricKey): number {
-  return entries.reduce((sum, entry) => sum + (entry[metric] ?? 0), 0);
-}
+const computeAccum = (entries: DailyEntry[], metric: MetricKey, upToDate: string): number => {
+  const monthStart = getMonthStart(upToDate);
+  return entries
+    .filter((entry) => sameMonth(entry.date, upToDate) && entry.date <= upToDate)
+    .reduce((acc, entry) => acc + entry[metric], 0);
+};
 
-function getLastSnapshotValue(entries: DailyEntry[], metric: MetricKey): number {
-  if (entries.length === 0) return 0;
-  const lastEntry = entries.reduce((latest, entry) =>
-    new Date(entry.date) > new Date(latest.date) ? entry : latest
+const getLastSnapshotValue = (entries: DailyEntry[], metric: MetricKey): number => {
+  const currentMonthEntries = entries.filter((e) => sameMonth(e.date, getToday()));
+  if (currentMonthEntries.length === 0) return 0;
+  const latestDate = currentMonthEntries.reduce(
+    (maxDate, e) => (new Date(e.date) > new Date(maxDate) ? e.date : maxDate),
+    currentMonthEntries[0].date
   );
-  return lastEntry[metric] ?? 0;
-}
+  const latestEntry = currentMonthEntries.find((e) => e.date === latestDate);
+  return latestEntry ? latestEntry[metric] : 0;
+};
 
-function getLast7DaysData(entries: DailyEntry[], metric: MetricKey): number[] {
+const getLast7Accum = (entries: DailyEntry[], metric: MetricKey): number[] => {
+  const todayDate = getToday();
+  const today = new Date(todayDate);
   const data: number[] = [];
-  const today = new Date(getToday() + 'T00:00:00');
   for (let i = 6; i >= 0; i--) {
-    const targetDate = new Date(today.getTime() - i * 86400000);
-    const dateStr = targetDate.toISOString().split('T')[0];
-    const entry = entries.find((e) => e.date === dateStr);
-    data.push(entry ? (entry[metric] ?? 0) : 0);
+    const checkDate = new Date(today);
+    checkDate.setDate(today.getDate() - i);
+    const dateStr = checkDate.toISOString().split('T')[0];
+    const accum = computeAccum(entries, metric, dateStr);
+    data.push(accum);
   }
   return data;
-}
+};
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
+const formatDate = (isoDate: string): string => {
+  const date = new Date(isoDate);
   const day = date.getDate().toString().padStart(2, '0');
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
-}
-
-const getDefaultFormData = (): DailyEntry => ({
-  date: getToday(),
-  faturamento: 0,
-  vendas: 0,
-  atrasos: 0,
-  carteira: 0,
-  previsaoAtual: 0,
-  previsaoProx: 0,
-});
+};
 
 interface SparklineProps {
   data: number[];
   color: string;
-  width?: number;
-  height?: number;
 }
 
-const Sparkline: React.FC<SparklineProps> = ({ data, color, width = 80, height = 40 }) => {
-  if (data.length === 0 || data.every((d) => d === 0)) {
-    return <div className="w-[80px] h-10 bg-gray-200 rounded-full" />;
+const Sparkline = ({ data, color }: SparklineProps) => {
+  if (data.length === 0 || data.every((v) => v === 0)) {
+    return <div className="w-20 h-5 bg-gray-200 rounded" />;
   }
   const max = Math.max(...data);
   const min = Math.min(...data);
-  const range = max > min ? max - min : 1;
-  const points: string[] = [];
-  data.forEach((d, i) => {
-    const x = (i / (data.length - 1)) * (width - 4);
-    const y = height - 4 - ((d - min) / range) * (height - 8);
-    points.push(`${x},${y}`);
-  });
-  const pointsStr = points.join(' ');
+  const range = max - min || 1;
+  const normalizedY = data.map((v) => 20 - ((v - min) / range) * 18);
+  const points = data
+    .map((_, i) => `${(i / (data.length - 1)) * 80} ${normalizedY[i]}`)
+    .join(' ');
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-10 block">
+    <svg className="w-20 h-5" viewBox="0 0 80 20">
       <polyline
-        points={pointsStr}
+        points={points}
         fill="none"
-        stroke={`${color}-500`}
-        strokeWidth="2.5"
+        stroke={color}
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -142,21 +122,38 @@ const Sparkline: React.FC<SparklineProps> = ({ data, color, width = 80, height =
   );
 };
 
-const DiarioPage = () => {
+export default function Diario() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [metas, setMetas] = useState<Metas>(defaultMetas);
-  const [formData, setFormData] = useState<DailyEntry>(getDefaultFormData());
-  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<FormDataType>({
+    date: getToday(),
+    faturamento: 0,
+    vendas: 0,
+    atrasos: 0,
+    carteiraTotal: 0,
+    previsaoMesAtual: 0,
+    previsaoMesSeguinte: 0,
+  });
+  const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
   const [showMetasModal, setShowMetasModal] = useState(false);
+  const [tempMetas, setTempMetas] = useState<Metas | undefined>();
+
+  const currentMonthEntries = entries
+    .filter((e) => sameMonth(e.date, getToday()))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   useEffect(() => {
-    const savedEntries = localStorage.getItem('diario-entries');
-    if (savedEntries) {
-      setEntries(JSON.parse(savedEntries));
-    }
-    const savedMetas = localStorage.getItem('diario-metas');
-    if (savedMetas) {
-      setMetas(JSON.parse(savedMetas));
+    try {
+      const savedEntries = localStorage.getItem('diario-entries');
+      if (savedEntries) {
+        setEntries(JSON.parse(savedEntries));
+      }
+      const savedMetas = localStorage.getItem('diario-metas');
+      if (savedMetas) {
+        setMetas(JSON.parse(savedMetas));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
     }
   }, []);
 
@@ -168,330 +165,311 @@ const DiarioPage = () => {
     localStorage.setItem('diario-metas', JSON.stringify(metas));
   }, [metas]);
 
-  const currentMonthEntries = entries.filter((e) => sameMonth(e.date, getToday()));
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const entryData: DailyEntry = { date: formData.date } as DailyEntry;
-    METRICS.forEach((m) => {
-      entryData[m.key] = formData[m.key];
-    });
-    if (editingEntryId) {
-      setEntries((prev) =>
-        prev.map((entry) => (entry.date === editingEntryId ? entryData : entry))
-      );
-      setEditingEntryId(null);
+  useEffect(() => {
+    if (showMetasModal) {
+      setTempMetas(metas);
     } else {
-      setEntries((prev) => [
-        ...prev,
-        entryData,
-      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      setTempMetas(undefined);
     }
-    setFormData(getDefaultFormData());
+  }, [showMetasModal, metas]);
+
+  const getCurrentValue = (metric: MetricKey): number => {
+    if (metric === 'previsaoMesAtual' || metric === 'previsaoMesSeguinte') {
+      return getLastSnapshotValue(entries, metric);
+    }
+    return computeAccum(entries, metric, getToday());
   };
 
-  const handleEdit = (entry: DailyEntry) => {
-    setEditingEntryId(entry.date);
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const newEntry: DailyEntry = formData as DailyEntry;
+
+    if (editingEntry) {
+      setEntries(entries.map((e) => (e.date === editingEntry.date ? newEntry : e)));
+      setEditingEntry(null);
+    } else {
+      const exists = entries.find((e) => e.date === newEntry.date);
+      if (exists) {
+        alert('Entrada para esta data já existe. Use Editar.');
+        return;
+      }
+      setEntries([...entries, newEntry]);
+    }
+    setFormData({
+      date: getToday(),
+      faturamento: 0,
+      vendas: 0,
+      atrasos: 0,
+      carteiraTotal: 0,
+      previsaoMesAtual: 0,
+      previsaoMesSeguinte: 0,
+    });
+  };
+
+  const editEntry = (entry: DailyEntry) => {
+    setEditingEntry(entry);
     setFormData(entry);
   };
 
-  const handleDelete = (date: string) => {
+  const deleteEntry = (date: string) => {
     if (confirm('Tem certeza que deseja deletar esta entrada?')) {
-      setEntries((prev) => prev.filter((e) => e.date !== date));
+      setEntries(entries.filter((e) => e.date !== date));
+      if (editingEntry?.date === date) {
+        setEditingEntry(null);
+        setFormData({
+          date: getToday(),
+          faturamento: 0,
+          vendas: 0,
+          atrasos: 0,
+          carteiraTotal: 0,
+          previsaoMesAtual: 0,
+          previsaoMesSeguinte: 0,
+        });
+      }
     }
   };
 
-  const monthlyValues = METRICS.map((m) => computeAccum(currentMonthEntries, m.key));
+  const handleSaveMetas = () => {
+    if (tempMetas) {
+      setMetas(tempMetas);
+      setShowMetasModal(false);
+    }
+  };
+
+  const updateTempMeta = (key: MetricKey, value: number) => {
+    setTempMetas((prev) => ({ ...prev!, [key]: value }));
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white p-6 md:p-8 pb-20">
-      {/* KPI Cards */}
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white p-6 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-black text-center bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent mb-16">
-          📊 Dashboard Diário
+        <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-8 text-center">
+          📊 Diário de Métricas
         </h1>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
-          {METRICS.map((m, index) => {
-            const value = monthlyValues[index];
-            const progress = metas[m.key] > 0 ? Math.min(100, (value / metas[m.key]) * 100) : 0;
-            const sparkData = getLast7DaysData(entries, m.key);
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-12">
+          {METRICS.map((metric) => {
+            const value = getCurrentValue(metric.key);
+            const target = metas[metric.key];
+            const progress = target > 0 ? Math.min(100, (value / target) * 100) : 0;
+            const sparkData = getLast7Accum(entries, metric.key);
+            const progressBg =
+              progress >= 100
+                ? 'bg-emerald-500'
+                : progress >= 80
+                ? 'bg-amber-500'
+                : 'bg-red-500';
             return (
               <div
-                key={m.key}
-                className="group bg-white/70 backdrop-blur-xl border border-white/50 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300 hover:-translate-y-2"
+                key={metric.key}
+                className="bg-white/80 backdrop-blur-md rounded-2xl p-6 shadow-xl border border-white/50 hover:shadow-2xl transition-all duration-300"
               >
-                <div className="flex items-center justify-between mb-6">
-                  <span className="text-4xl group-hover:scale-110 transition-transform duration-200">
-                    {m.emoji}
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-2xl md:text-3xl">{metric.emoji}</span>
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      progress >= 100
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : progress >= 80
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {Math.round(progress)}%
                   </span>
-                  <Sparkline data={sparkData} color={m.color} />
                 </div>
-                <h3 className="text-xl font-bold text-gray-800 mb-4 capitalize">{m.label}</h3>
-                <p className="text-4xl lg:text-3xl font-black bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent mb-6">
-                  {value.toLocaleString()}
+                <h3 className="text-lg font-semibold text-gray-800 mb-2 truncate">
+                  {metric.label}
+                </h3>
+                <p className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                  {value.toLocaleString('pt-BR')}
                 </p>
-                <div className="w-full bg-gray-200/50 rounded-2xl h-4 overflow-hidden">
+                <Sparkline data={sparkData} color={metric.color} />
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
                   <div
-                    className={`h-4 bg-gradient-to-r from-${m.color}-500 to-${m.color}-600 rounded-2xl shadow-lg transition-all duration-700`}
+                    className={`h-2 rounded-full bg-gradient-to-r from-blue-500 to-sky-500 transition-all ${progressBg === 'bg-red-500' ? 'from-red-500 to-red-400' : progressBg === 'bg-amber-500' ? 'from-amber-500 to-amber-400' : 'from-emerald-500 to-emerald-400'}`}
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <p className="text-sm font-semibold text-gray-700 mt-3">
-                  {value.toLocaleString()} / {metas[m.key].toLocaleString()} ({progress.toFixed(1)}%)
-                </p>
               </div>
             );
           })}
         </div>
 
-        {/* Resumo Mensal */}
-        <section className="mb-20">
-          <h2 className="text-4xl font-bold text-center text-blue-800 mb-12 tracking-tight">
-            📈 Resumo Mensal
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {METRICS.map((m, index) => {
-              const value = monthlyValues[index];
-              const progress = metas[m.key] > 0 ? (value / metas[m.key]) * 100 : 0;
-              return (
-                <div
-                  key={m.key}
-                  className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-3xl p-8 shadow-xl hover:shadow-2xl transition-all"
-                >
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-3xl">{m.emoji}</span>
-                      <h3 className="text-2xl font-bold text-gray-800">{m.label}</h3>
-                    </div>
-                    <span className="text-2xl font-bold text-blue-700">
-                      {value.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-3xl h-6 shadow-inner overflow-hidden">
-                    <div
-                      className={`h-6 bg-gradient-to-r from-${m.color}-500 via-${m.color}-600 to-${m.color}-700 rounded-3xl shadow-lg transition-all duration-1000`}
-                      style={{ width: `${Math.min(100, progress)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-4">
-                    <span className="text-sm font-medium text-gray-600">
-                      Meta: {metas[m.key].toLocaleString()}
-                    </span>
-                    <span className={`text-lg font-bold ${progress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
-                      {Math.min(100, progress).toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
         {/* Formulário */}
-        <section className="mb-20">
-          <div className="bg-white/90 backdrop-blur-xl border border-white/60 rounded-3xl p-10 shadow-2xl">
-            <h2 className="text-4xl font-bold text-blue-800 mb-10 text-center">
-              {editingEntryId ? '✏️ Editar Entrada' : '➕ Nova Entrada Diária'}
-            </h2>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              <div>
-                <label className="block text-lg font-semibold text-gray-700 mb-4">📅 Data</label>
+        <section className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 md:p-8 shadow-2xl mb-12">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            📝 {editingEntry ? 'Editar Entrada' : 'Nova Entrada'}
+          </h2>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+            <div className="form-control w-full">
+              <label className="label">
+                <span className="label-text">Data</span>
+              </label>
+              <input
+                type="date"
+                className="input input-bordered w-full max-w-xs md:max-w-none"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                required
+              />
+            </div>
+            {METRICS.map((m) => (
+              <div key={m.key} className="form-control w-full">
+                <label className="label">
+                  <span className="label-text flex items-center gap-2">
+                    {m.emoji} {m.label}
+                  </span>
+                </label>
                 <input
-                  type="date"
+                  type="number"
+                  step="any"
+                  className="input input-bordered w-full"
+                  value={formData[m.key]}
+                  onChange={(e) =>
+                    setFormData({ ...formData, [m.key]: parseFloat(e.target.value) || 0 })
+                  }
+                  placeholder="0"
                   required
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full p-5 border-2 border-blue-200 rounded-2xl focus:ring-4 focus:ring-blue-200/50 focus:border-blue-400 bg-white/60 shadow-lg text-lg font-medium transition-all"
                 />
               </div>
-              {METRICS.map((m) => (
-                <div key={m.key}>
-                  <label className="block text-lg font-semibold text-gray-700 mb-4">
-                    {m.emoji} {m.label}
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={formData[m.key]}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        [m.key]: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                    className={`w-full p-5 border-2 rounded-2xl shadow-lg focus:ring-4 focus:ring-${m.color}-200/50 focus:border-${m.color}-400 bg-white/60 text-lg font-medium transition-all border-${m.color}-200`}
-                  />
-                </div>
-              ))}
-              <div className="lg:col-span-3 flex flex-col sm:flex-row gap-4 pt-4">
+            ))}
+            <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4 flex flex-col sm:flex-row gap-3 pt-2">
+              <button type="submit" className="btn btn-primary flex-1">
+                {editingEntry ? 'Atualizar' : 'Adicionar Entrada'}
+              </button>
+              {editingEntry && (
                 <button
-                  type="submit"
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-5 px-8 rounded-2xl font-bold text-xl shadow-xl hover:shadow-2xl transition-all duration-200"
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setEditingEntry(null);
+                    setFormData({
+                      date: getToday(),
+                      faturamento: 0,
+                      vendas: 0,
+                      atrasos: 0,
+                      carteiraTotal: 0,
+                      previsaoMesAtual: 0,
+                      previsaoMesSeguinte: 0,
+                    });
+                  }}
                 >
-                  {editingEntryId ? '✅ Atualizar' : '💾 Salvar'} Entrada
+                  Cancelar
                 </button>
-                {editingEntryId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingEntryId(null);
-                      setFormData(getDefaultFormData());
-                    }}
-                    className="flex-1 bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white py-5 px-8 rounded-2xl font-bold text-xl shadow-xl hover:shadow-2xl transition-all duration-200"
-                  >
-                    ❌ Cancelar
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
+              )}
+            </div>
+          </form>
         </section>
 
         {/* Histórico */}
-        <section>
-          <div className="bg-white/90 backdrop-blur-xl border border-white/60 rounded-3xl p-10 shadow-2xl overflow-hidden">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-4">
-              <h2 className="text-4xl font-bold text-blue-800 flex-1">📋 Histórico do Mês</h2>
-              <button
-                onClick={() => setShowMetasModal(true)}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl transition-all whitespace-nowrap"
-              >
-                ⚙️ Configurar Metas Mensais
-              </button>
+        <section className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 md:p-8 shadow-2xl">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            📋 Histórico do Mês
+          </h2>
+          {currentMonthEntries.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">Nenhuma entrada registrada este mês.</p>
             </div>
+          ) : (
             <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse">
+              <table className="table w-full">
                 <thead>
-                  <tr className="bg-gradient-to-r from-blue-50 to-sky-50 backdrop-blur-sm">
-                    <th className="px-6 py-5 text-left text-lg font-bold text-blue-800 border-b border-blue-100">Data</th>
+                  <tr>
+                    <th>Data</th>
                     {METRICS.map((m) => (
-                      <th
-                        key={m.key}
-                        className={`px-6 py-5 text-left text-lg font-bold text-${m.color}-700 border-b border-blue-100`}
-                      >
+                      <th key={m.key} className="text-center">
                         {m.emoji}
+                        <br />
+                        <span className="text-xs font-normal">{m.label}</span>
                       </th>
                     ))}
-                    <th className="px-6 py-5 text-left text-lg font-bold text-blue-800 border-b border-blue-100">
-                      Ações
-                    </th>
+                    <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {currentMonthEntries
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map((entry) => (
-                      <tr
-                        key={entry.date}
-                        className="hover:bg-blue-50/50 transition-all border-b border-blue-50 backdrop-blur-sm"
-                      >
-                        <td className="px-6 py-6 font-bold text-xl text-gray-900 border-b border-blue-50">
-                          {formatDate(entry.date)}
+                  {currentMonthEntries.map((entry) => (
+                    <tr key={entry.date}>
+                      <th>{formatDate(entry.date)}</th>
+                      {METRICS.map((m) => (
+                        <td key={m.key} className="text-right">
+                          {entry[m.key].toLocaleString('pt-BR')}
                         </td>
-                        {METRICS.map((m) => (
-                          <td
-                            key={m.key}
-                            className={`px-6 py-6 font-semibold text-lg text-${m.color}-600 border-b border-blue-50`}
+                      ))}
+                      <td>
+                        <div className="flex gap-2">
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => editEntry(entry)}
                           >
-                            {(entry[m.key] as number).toLocaleString()}
-                          </td>
-                        ))}
-                        <td className="px-6 py-6 border-b border-blue-50">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleEdit(entry)}
-                              className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all text-sm"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDelete(entry.date)}
-                              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all text-sm"
-                            >
-                              Deletar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  {currentMonthEntries.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={METRICS.length + 2}
-                        className="px-6 py-20 text-center text-xl text-gray-500 font-medium"
-                      >
-                        📭 Nenhuma entrada registrada este mês. Adicione a primeira!
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-sm btn-error"
+                            onClick={() => deleteEntry(entry.date)}
+                          >
+                            Deletar
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          )}
         </section>
-      </div>
 
-      {/* Modal Metas */}
-      {showMetasModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white/95 backdrop-blur-2xl rounded-3xl p-10 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-3xl border border-white/60">
-            <div className="flex justify-between items-center mb-10 pb-6 border-b border-blue-100">
-              <h2 className="text-4xl font-bold text-blue-800">⚙️ Configurar Metas Mensais</h2>
-              <button
-                onClick={() => setShowMetasModal(false)}
-                className="text-4xl text-gray-500 hover:text-blue-600 transition-colors p-2 -m-2 rounded-2xl hover:bg-blue-50"
-              >
-                &times;
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setShowMetasModal(false);
-              }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
-            >
-              {METRICS.map((m) => (
-                <div key={m.key}>
-                  <label className="block text-xl font-bold text-gray-800 mb-5 flex items-center space-x-3">
-                    <span className="text-2xl">{m.emoji}</span>
-                    <span>{m.label}</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={metas[m.key]}
-                    onChange={(e) =>
-                      setMetas((prev) => ({
-                        ...prev,
-                        [m.key]: parseFloat(e.target.value) || 0,
-                      }))
-                    }
-                    className={`w-full p-6 border-2 rounded-3xl shadow-xl focus:ring-4 focus:ring-${m.color}-200/50 focus:border-${m.color}-500 bg-white/70 text-2xl font-bold text-gray-900 transition-all border-${m.color}-200 hover:border-${m.color}-300`}
-                  />
+        {/* FAB for Metas */}
+        <button
+          className="fixed bottom-6 right-6 btn btn-circle btn-primary text-2xl shadow-xl border-0"
+          onClick={() => setShowMetasModal(true)}
+        >
+          ⚙️
+        </button>
+
+        {/* Modal Metas */}
+        {showMetasModal && (
+          <dialog open className="modal modal-open">
+            <div className="modal-box max-w-2xl">
+              <h3 className="font-bold text-lg flex items-center gap-2 mb-6">
+                ⚙️ Configurar Metas Mensais
+              </h3>
+              <form className="space-y-4">
+                {METRICS.map((m) => (
+                  <div key={m.key} className="flex flex-col gap-2">
+                    <label className="label-text font-medium flex items-center gap-2">
+                      {m.emoji} {m.label}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      className="input input-bordered w-full"
+                      value={tempMetas?.[m.key] ?? 0}
+                      onChange={(e) =>
+                        updateTempMeta(m.key, parseFloat(e.target.value) || 0)
+                      }
+                    />
+                  </div>
+                ))}
+                <div className="modal-action gap-2 mt-8">
+                  <button className="btn btn-primary" type="button" onClick={handleSaveMetas}>
+                    Salvar
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={() => setShowMetasModal(false)}
+                  >
+                    Cancelar
+                  </button>
                 </div>
-              ))}
-              <div className="lg:col-span-3 pt-8 border-t border-blue-100 mt-8 flex flex-col sm:flex-row gap-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-6 px-10 rounded-3xl font-bold text-2xl shadow-2xl hover:shadow-3xl transition-all duration-200"
-                >
-                  💾 Salvar Metas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowMetasModal(false)}
-                  className="flex-1 bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white py-6 px-10 rounded-3xl font-bold text-2xl shadow-2xl hover:shadow-3xl transition-all duration-200"
-                >
-                  ❌ Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+              </form>
+            </div>
+          </dialog>
+        )}
+      </div>
     </div>
   );
-};
-
-export default DiarioPage;
+}
