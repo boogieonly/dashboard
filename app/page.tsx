@@ -87,7 +87,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
           <MaterialCard title="Estoque vs Uso por Produto">
-            <BarChartComponent data={barData} />
+            <BarChartComponent data={barData} dataKeys={['estoque', 'uso']} />
           </MaterialCard>
           <MaterialCard title="Distribuição Geral de Estoque">
             <PieChartComponent data={pieData} />
