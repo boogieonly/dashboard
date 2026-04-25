@@ -93,7 +93,7 @@ function Sparkline({ data }: { data: number[] }) {
 export default function Diario() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [currentForm, setCurrentForm] = useState<CurrentForm>({ date: '' });
-  const [metas, setMetas] = useState<Metas>({});
+  const [metas, setMetas] = useState<Metas>({} as Metas);
   const [showMetasModal, setShowMetasModal] = useState(false);
   const [currentMetasForm, setCurrentMetasForm] = useState<CurrentMetasForm>({});
 
