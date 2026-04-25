@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
 type MetricKey = 'faturamento' | 'vendas' | 'atrasos' | 'carteira' | 'previsaoAtual' | 'previsaoProx';
 
-interface Values {
+interface DailyEntry {
+  date: string;
   faturamento: number;
   vendas: number;
   atrasos: number;
@@ -13,312 +14,476 @@ interface Values {
   previsaoProx: number;
 }
 
-type HistoryData = Record<MetricKey, number[]>;
+type Metas = {
+  faturamento: number;
+  vendas: number;
+  atrasos: number;
+  carteira: number;
+  previsaoAtual: number;
+  previsaoProx: number;
+};
 
-interface Metric {
+type Metric = {
   key: MetricKey;
   label: string;
   emoji: string;
+  color: string;
+};
+
+const METRICS: Metric[] = [
+  { key: 'faturamento', label: 'Faturamento', emoji: '💰', color: 'blue' },
+  { key: 'vendas', label: 'Vendas', emoji: '📦', color: 'green' },
+  { key: 'atrasos', label: 'Atrasos', emoji: '⚠️', color: 'orange' },
+  { key: 'carteira', label: 'Carteira', emoji: '💳', color: 'cyan' },
+  { key: 'previsaoAtual', label: 'Previsão Atual', emoji: '🔮', color: 'teal' },
+  { key: 'previsaoProx', label: 'Previsão Próx', emoji: '📈', color: 'sky' },
+];
+
+const defaultMetas: Metas = {
+  faturamento: 10000,
+  vendas: 100,
+  atrasos: 5,
+  carteira: 5000,
+  previsaoAtual: 12000,
+  previsaoProx: 15000,
+};
+
+function getToday(): string {
+  return new Date().toISOString().split('T')[0];
 }
 
-const defaultValues: Values = {
+function getMonthStart(): string {
+  const date = new Date();
+  date.setDate(1);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString().split('T')[0];
+}
+
+function sameMonth(date1: string, date2: string): boolean {
+  const d1 = new Date(date1 + 'T00:00:00');
+  const d2 = new Date(date2 + 'T00:00:00');
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
+}
+
+function computeAccum(entries: DailyEntry[], metric: MetricKey): number {
+  return entries.reduce((sum, entry) => sum + (entry[metric] ?? 0), 0);
+}
+
+function getLastSnapshotValue(entries: DailyEntry[], metric: MetricKey): number {
+  if (entries.length === 0) return 0;
+  const lastEntry = entries.reduce((latest, entry) =>
+    new Date(entry.date) > new Date(latest.date) ? entry : latest
+  );
+  return lastEntry[metric] ?? 0;
+}
+
+function getLast7DaysData(entries: DailyEntry[], metric: MetricKey): number[] {
+  const data: number[] = [];
+  const today = new Date(getToday() + 'T00:00:00');
+  for (let i = 6; i >= 0; i--) {
+    const targetDate = new Date(today.getTime() - i * 86400000);
+    const dateStr = targetDate.toISOString().split('T')[0];
+    const entry = entries.find((e) => e.date === dateStr);
+    data.push(entry ? (entry[metric] ?? 0) : 0);
+  }
+  return data;
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+const getDefaultFormData = (): DailyEntry => ({
+  date: getToday(),
   faturamento: 0,
   vendas: 0,
   atrasos: 0,
   carteira: 0,
   previsaoAtual: 0,
   previsaoProx: 0,
-};
+});
 
-const defaultHistory: HistoryData = {
-  faturamento: [],
-  vendas: [],
-  atrasos: [],
-  carteira: [],
-  previsaoAtual: [],
-  previsaoProx: [],
-};
-
-const metrics: Metric[] = [
-  { key: 'faturamento', label: 'Faturamento', emoji: '💰' },
-  { key: 'vendas', label: 'Vendas', emoji: '🛒' },
-  { key: 'atrasos', label: 'Atrasos', emoji: '⏰' },
-  { key: 'carteira', label: 'Carteira', emoji: '💼' },
-  { key: 'previsaoAtual', label: 'Previsão Atual', emoji: '📊' },
-  { key: 'previsaoProx', label: 'Previsão Próxima', emoji: '🔮' },
-];
-
-const Sparkline = ({
-  data,
-}: {
+interface SparklineProps {
   data: number[];
-}) => {
-  if (data.length === 0) {
-    return (
-      <div className="h-24 w-full bg-gradient-to-r from-gray-200 to-gray-300 rounded-full animate-pulse" />
-    );
+  color: string;
+  width?: number;
+  height?: number;
+}
+
+const Sparkline: React.FC<SparklineProps> = ({ data, color, width = 80, height = 40 }) => {
+  if (data.length === 0 || data.every((d) => d === 0)) {
+    return <div className="w-[80px] h-10 bg-gray-200 rounded-full" />;
   }
-
-  const maxV = Math.max(...data);
-  const minV = Math.min(...data);
-  const range = maxV - minV || 1;
-
-  const width = 120;
-  const height = 24;
-  const padX = 8;
-  const padY = 4;
-
-  const points: string[] = data.map((d, i) => {
-    const x =
-      padX + (width - 2 * padX) * (i / (data.length - 1 || 1));
-    const y =
-      padY + (height - 2 * padY) * (1 - (d - minV) / range);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max > min ? max - min : 1;
+  const points: string[] = [];
+  data.forEach((d, i) => {
+    const x = (i / (data.length - 1)) * (width - 4);
+    const y = height - 4 - ((d - min) / range) * (height - 8);
+    points.push(`${x},${y}`);
   });
-
+  const pointsStr = points.join(' ');
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24 flex-shrink-0">
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-10 block">
       <polyline
-        points={points.join(' ')}
+        points={pointsStr}
         fill="none"
-        stroke="#3B82F6"
+        stroke={`${color}-500`}
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {points.length > 0 && (
-        <circle
-          cx={points[points.length - 1].split(',')[0]}
-          cy={points[points.length - 1].split(',')[1]}
-          r="4"
-          fill="#3B82F6"
-          stroke="white"
-          strokeWidth="2"
-        />
-      )}
     </svg>
   );
 };
 
-export default function DiarioPage() {
-  const [currentValues, setCurrentValues] = useState<Values>(defaultValues);
-  const [currentGoals, setCurrentGoals] = useState<Values>(defaultValues);
-  const [historyData, setHistoryData] = useState<HistoryData>(defaultHistory);
-  const [tempInput, setTempInput] = useState<Partial<Values>>({});
-  const [showModal, setShowModal] = useState(false);
-  const [tempGoals, setTempGoals] = useState<Values>(defaultValues);
-
-  const updateMetric = (key: MetricKey, value: number) => {
-    setCurrentValues((prev) => ({ ...prev, [key]: value }));
-    setTempInput((prev) => ({ ...prev, [key]: value }));
-
-    setHistoryData((prev) => {
-      const newData = { ...prev };
-      newData[key].push(value);
-      if (newData[key].length > 30) {
-        newData[key].shift();
-      }
-      return newData;
-    });
-  };
-
-  const handleOpenModal = () => {
-    setTempGoals(currentGoals);
-    setShowModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setShowModal(false);
-  };
-
-  const handleSubmitGoals = (e: React.FormEvent) => {
-    e.preventDefault();
-    setCurrentGoals(tempGoals);
-    setShowModal(false);
-  };
+const DiarioPage = () => {
+  const [entries, setEntries] = useState<DailyEntry[]>([]);
+  const [metas, setMetas] = useState<Metas>(defaultMetas);
+  const [formData, setFormData] = useState<DailyEntry>(getDefaultFormData());
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [showMetasModal, setShowMetasModal] = useState(false);
 
   useEffect(() => {
-    const loadData = () => {
-      try {
-        const valuesStr = localStorage.getItem('diario-values');
-        if (valuesStr) {
-          setCurrentValues(JSON.parse(valuesStr) as Values);
-        }
-        const goalsStr = localStorage.getItem('diario-goals');
-        if (goalsStr) {
-          setCurrentGoals(JSON.parse(goalsStr) as Values);
-        }
-        const historyStr = localStorage.getItem('diario-history');
-        if (historyStr) {
-          setHistoryData(JSON.parse(historyStr) as HistoryData);
-        }
-      } catch (err) {
-        console.error('Erro ao carregar dados do localStorage:', err);
-      }
-    };
-    loadData();
+    const savedEntries = localStorage.getItem('diario-entries');
+    if (savedEntries) {
+      setEntries(JSON.parse(savedEntries));
+    }
+    const savedMetas = localStorage.getItem('diario-metas');
+    if (savedMetas) {
+      setMetas(JSON.parse(savedMetas));
+    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('diario-values', JSON.stringify(currentValues));
-  }, [currentValues]);
+    localStorage.setItem('diario-entries', JSON.stringify(entries));
+  }, [entries]);
 
   useEffect(() => {
-    localStorage.setItem('diario-goals', JSON.stringify(currentGoals));
-  }, [currentGoals]);
+    localStorage.setItem('diario-metas', JSON.stringify(metas));
+  }, [metas]);
 
-  useEffect(() => {
-    localStorage.setItem('diario-history', JSON.stringify(historyData));
-  }, [historyData]);
+  const currentMonthEntries = entries.filter((e) => sameMonth(e.date, getToday()));
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const entryData: DailyEntry = { date: formData.date } as DailyEntry;
+    METRICS.forEach((m) => {
+      entryData[m.key] = formData[m.key];
+    });
+    if (editingEntryId) {
+      setEntries((prev) =>
+        prev.map((entry) => (entry.date === editingEntryId ? entryData : entry))
+      );
+      setEditingEntryId(null);
+    } else {
+      setEntries((prev) => [
+        ...prev,
+        entryData,
+      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    }
+    setFormData(getDefaultFormData());
+  };
+
+  const handleEdit = (entry: DailyEntry) => {
+    setEditingEntryId(entry.date);
+    setFormData(entry);
+  };
+
+  const handleDelete = (date: string) => {
+    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
+      setEntries((prev) => prev.filter((e) => e.date !== date));
+    }
+  };
+
+  const monthlyValues = METRICS.map((m) => computeAccum(currentMonthEntries, m.key));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-white p-6 md:p-8 pb-20">
+      {/* KPI Cards */}
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-5xl md:text-6xl font-bold text-center mb-16 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
-          Diário de Métricas
+        <h1 className="text-4xl md:text-5xl font-black text-center bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent mb-16">
+          📊 Dashboard Diário
         </h1>
-
-        <button
-          onClick={handleOpenModal}
-          className="mx-auto block px-10 py-5 bg-white/80 backdrop-blur-xl rounded-3xl font-bold text-xl shadow-2xl border border-white/50 hover:shadow-3xl hover:-translate-y-1 hover:bg-white/100 transition-all duration-300 mb-16"
-        >
-          Definir Metas 🎯
-        </button>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
-          {metrics.map((metric) => (
-            <div
-              key={metric.key}
-              className="group relative bg-white/20 backdrop-blur-xl border border-white/30 rounded-3xl p-8 shadow-2xl hover:shadow-3xl hover:-translate-y-2 transition-all duration-500 overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 group-hover:opacity-100 transition-all duration-500" />
-              <div className="text-6xl mb-6 relative z-10 animate-bounce-slow">{metric.emoji}</div>
-              <h3 className="text-2xl font-bold mb-4 text-white/95 relative z-10 tracking-tight">
-                {metric.label}
-              </h3>
-              <div className="text-5xl font-black text-white mb-6 relative z-10 drop-shadow-lg">
-                {currentValues[metric.key].toLocaleString()}
-              </div>
-              <div className="flex items-center justify-center gap-4 mb-8 relative z-10">
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={tempInput[metric.key] ?? currentValues[metric.key]}
-                  onChange={(e) =>
-                    setTempInput((prev) => ({
-                      ...prev,
-                      [metric.key]: Number(e.target.value) || 0,
-                    }))
-                  }
-                  className="w-32 px-4 py-3 text-2xl font-bold bg-white/40 border-2 border-white/60 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-400/60 focus:border-blue-400 text-center transition-all shadow-lg"
-                />
-                <button
-                  onClick={() => updateMetric(metric.key, tempInput[metric.key] ?? currentValues[metric.key])}
-                  className="px-8 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:scale-110 transition-all duration-300 whitespace-nowrap"
-                >
-                  Atualizar
-                </button>
-              </div>
-              <div className="mb-8 relative z-10">
-                <div className="text-lg font-semibold text-white/90 mb-3">Meta: {currentGoals[metric.key].toLocaleString()}</div>
-                <div className="w-full bg-white/40 rounded-2xl h-4 overflow-hidden shadow-inner">
-                  {currentGoals[metric.key] > 0 && (
-                    <div
-                      className="h-4 bg-gradient-to-r from-emerald-400 via-green-500 to-blue-500 rounded-2xl shadow-lg transition-all duration-1000 ease-out"
-                      style={{
-                        width: `${Math.min(100, (currentValues[metric.key] / currentGoals[metric.key]) * 100)}%`,
-                      }}
-                    />
-                  )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
+          {METRICS.map((m, index) => {
+            const value = monthlyValues[index];
+            const progress = metas[m.key] > 0 ? Math.min(100, (value / metas[m.key]) * 100) : 0;
+            const sparkData = getLast7DaysData(entries, m.key);
+            return (
+              <div
+                key={m.key}
+                className="group bg-white/70 backdrop-blur-xl border border-white/50 shadow-2xl rounded-3xl p-8 hover:shadow-3xl transition-all duration-300 hover:-translate-y-2"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <span className="text-4xl group-hover:scale-110 transition-transform duration-200">
+                    {m.emoji}
+                  </span>
+                  <Sparkline data={sparkData} color={m.color} />
                 </div>
+                <h3 className="text-xl font-bold text-gray-800 mb-4 capitalize">{m.label}</h3>
+                <p className="text-4xl lg:text-3xl font-black bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent mb-6">
+                  {value.toLocaleString()}
+                </p>
+                <div className="w-full bg-gray-200/50 rounded-2xl h-4 overflow-hidden">
+                  <div
+                    className={`h-4 bg-gradient-to-r from-${m.color}-500 to-${m.color}-600 rounded-2xl shadow-lg transition-all duration-700`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <p className="text-sm font-semibold text-gray-700 mt-3">
+                  {value.toLocaleString()} / {metas[m.key].toLocaleString()} ({progress.toFixed(1)}%)
+                </p>
               </div>
-              <Sparkline data={historyData[metric.key]} />
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        <section>
-          <h2 className="text-4xl md:text-5xl font-bold text-center mb-16 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent drop-shadow-lg">
-            Histórico Recente
+        {/* Resumo Mensal */}
+        <section className="mb-20">
+          <h2 className="text-4xl font-bold text-center text-blue-800 mb-12 tracking-tight">
+            📈 Resumo Mensal
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
-            {metrics.map((metric) => (
-              <div
-                key={metric.key}
-                className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-10 shadow-2xl hover:shadow-3xl transition-all duration-300 text-center"
-              >
-                <div className="text-5xl mb-6 mx-auto w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center backdrop-blur-sm border border-white/40 shadow-xl">
-                  {metric.emoji}
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {METRICS.map((m, index) => {
+              const value = monthlyValues[index];
+              const progress = metas[m.key] > 0 ? (value / metas[m.key]) * 100 : 0;
+              return (
+                <div
+                  key={m.key}
+                  className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-3xl p-8 shadow-xl hover:shadow-2xl transition-all"
+                >
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="flex items-center space-x-3">
+                      <span className="text-3xl">{m.emoji}</span>
+                      <h3 className="text-2xl font-bold text-gray-800">{m.label}</h3>
+                    </div>
+                    <span className="text-2xl font-bold text-blue-700">
+                      {value.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-3xl h-6 shadow-inner overflow-hidden">
+                    <div
+                      className={`h-6 bg-gradient-to-r from-${m.color}-500 via-${m.color}-600 to-${m.color}-700 rounded-3xl shadow-lg transition-all duration-1000`}
+                      style={{ width: `${Math.min(100, progress)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-4">
+                    <span className="text-sm font-medium text-gray-600">
+                      Meta: {metas[m.key].toLocaleString()}
+                    </span>
+                    <span className={`text-lg font-bold ${progress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                      {Math.min(100, progress).toFixed(1)}%
+                    </span>
+                  </div>
                 </div>
-                <h3 className="text-2xl font-bold mb-8 text-white/95 tracking-tight">
-                  {metric.label}
-                </h3>
-                <Sparkline data={historyData[metric.key].slice(-14)} />
-                <div className="mt-8 text-sm space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-blue-400 scrollbar-track-white/20">
-                  {historyData[metric.key]
-                    .slice(-7)
-                    .reverse()
-                    .map((val, i) => (
-                      <div key={i} className="flex justify-between py-2 px-4 bg-white/10 rounded-xl backdrop-blur-sm border border-white/30">
-                        <span className="text-white/80 font-medium">
-                          {new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('pt-BR')}
-                        </span>
-                        <span className="font-mono text-white font-bold text-lg">
-                          {val.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Formulário */}
+        <section className="mb-20">
+          <div className="bg-white/90 backdrop-blur-xl border border-white/60 rounded-3xl p-10 shadow-2xl">
+            <h2 className="text-4xl font-bold text-blue-800 mb-10 text-center">
+              {editingEntryId ? '✏️ Editar Entrada' : '➕ Nova Entrada Diária'}
+            </h2>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div>
+                <label className="block text-lg font-semibold text-gray-700 mb-4">📅 Data</label>
+                <input
+                  type="date"
+                  required
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full p-5 border-2 border-blue-200 rounded-2xl focus:ring-4 focus:ring-blue-200/50 focus:border-blue-400 bg-white/60 shadow-lg text-lg font-medium transition-all"
+                />
               </div>
-            ))}
+              {METRICS.map((m) => (
+                <div key={m.key}>
+                  <label className="block text-lg font-semibold text-gray-700 mb-4">
+                    {m.emoji} {m.label}
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={formData[m.key]}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        [m.key]: parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                    className={`w-full p-5 border-2 rounded-2xl shadow-lg focus:ring-4 focus:ring-${m.color}-200/50 focus:border-${m.color}-400 bg-white/60 text-lg font-medium transition-all border-${m.color}-200`}
+                  />
+                </div>
+              ))}
+              <div className="lg:col-span-3 flex flex-col sm:flex-row gap-4 pt-4">
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-5 px-8 rounded-2xl font-bold text-xl shadow-xl hover:shadow-2xl transition-all duration-200"
+                >
+                  {editingEntryId ? '✅ Atualizar' : '💾 Salvar'} Entrada
+                </button>
+                {editingEntryId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEntryId(null);
+                      setFormData(getDefaultFormData());
+                    }}
+                    className="flex-1 bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white py-5 px-8 rounded-2xl font-bold text-xl shadow-xl hover:shadow-2xl transition-all duration-200"
+                  >
+                    ❌ Cancelar
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </section>
+
+        {/* Histórico */}
+        <section>
+          <div className="bg-white/90 backdrop-blur-xl border border-white/60 rounded-3xl p-10 shadow-2xl overflow-hidden">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-4">
+              <h2 className="text-4xl font-bold text-blue-800 flex-1">📋 Histórico do Mês</h2>
+              <button
+                onClick={() => setShowMetasModal(true)}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-4 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl transition-all whitespace-nowrap"
+              >
+                ⚙️ Configurar Metas Mensais
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full table-auto border-collapse">
+                <thead>
+                  <tr className="bg-gradient-to-r from-blue-50 to-sky-50 backdrop-blur-sm">
+                    <th className="px-6 py-5 text-left text-lg font-bold text-blue-800 border-b border-blue-100">Data</th>
+                    {METRICS.map((m) => (
+                      <th
+                        key={m.key}
+                        className={`px-6 py-5 text-left text-lg font-bold text-${m.color}-700 border-b border-blue-100`}
+                      >
+                        {m.emoji}
+                      </th>
+                    ))}
+                    <th className="px-6 py-5 text-left text-lg font-bold text-blue-800 border-b border-blue-100">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentMonthEntries
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                    .map((entry) => (
+                      <tr
+                        key={entry.date}
+                        className="hover:bg-blue-50/50 transition-all border-b border-blue-50 backdrop-blur-sm"
+                      >
+                        <td className="px-6 py-6 font-bold text-xl text-gray-900 border-b border-blue-50">
+                          {formatDate(entry.date)}
+                        </td>
+                        {METRICS.map((m) => (
+                          <td
+                            key={m.key}
+                            className={`px-6 py-6 font-semibold text-lg text-${m.color}-600 border-b border-blue-50`}
+                          >
+                            {(entry[m.key] as number).toLocaleString()}
+                          </td>
+                        ))}
+                        <td className="px-6 py-6 border-b border-blue-50">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEdit(entry)}
+                              className="bg-blue-500 hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all text-sm"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleDelete(entry.date)}
+                              className="bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all text-sm"
+                            >
+                              Deletar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  {currentMonthEntries.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={METRICS.length + 2}
+                        className="px-6 py-20 text-center text-xl text-gray-500 font-medium"
+                      >
+                        📭 Nenhuma entrada registrada este mês. Adicione a primeira!
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50 p-8">
-          <div className="bg-white/20 backdrop-blur-3xl border border-white/30 rounded-4xl p-10 max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-3xl">
-            <h2 className="text-4xl font-bold mb-10 text-center bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent drop-shadow-lg">
-              Definir Metas Diárias
-            </h2>
-            <form onSubmit={handleSubmitGoals} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {metrics.map((metric) => (
-                <div key={metric.key} className="flex items-center gap-4 p-6 bg-white/10 backdrop-blur-xl rounded-3xl border border-white/20 hover:bg-white/20 transition-all shadow-lg hover:shadow-xl">
-                  <div className="text-3xl flex-shrink-0 p-3 bg-white/30 rounded-2xl border border-white/50 shadow-md">
-                    {metric.emoji}
-                  </div>
-                  <label className="font-semibold text-white/90 flex-1 min-w-0 pr-4">
-                    {metric.label}
+      {/* Modal Metas */}
+      {showMetasModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-2xl rounded-3xl p-10 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-3xl border border-white/60">
+            <div className="flex justify-between items-center mb-10 pb-6 border-b border-blue-100">
+              <h2 className="text-4xl font-bold text-blue-800">⚙️ Configurar Metas Mensais</h2>
+              <button
+                onClick={() => setShowMetasModal(false)}
+                className="text-4xl text-gray-500 hover:text-blue-600 transition-colors p-2 -m-2 rounded-2xl hover:bg-blue-50"
+              >
+                &times;
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setShowMetasModal(false);
+              }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+            >
+              {METRICS.map((m) => (
+                <div key={m.key}>
+                  <label className="block text-xl font-bold text-gray-800 mb-5 flex items-center space-x-3">
+                    <span className="text-2xl">{m.emoji}</span>
+                    <span>{m.label}</span>
                   </label>
                   <input
                     type="number"
-                    min="0"
                     step="any"
-                    value={tempGoals[metric.key]}
+                    value={metas[m.key]}
                     onChange={(e) =>
-                      setTempGoals((prev) => ({
+                      setMetas((prev) => ({
                         ...prev,
-                        [metric.key]: Number(e.target.value) || 0,
+                        [m.key]: parseFloat(e.target.value) || 0,
                       }))
                     }
-                    className="flex-1 px-6 py-4 text-xl font-bold bg-white/50 border-2 border-white/60 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-400/70 focus:border-blue-400 transition-all shadow-lg"
+                    className={`w-full p-6 border-2 rounded-3xl shadow-xl focus:ring-4 focus:ring-${m.color}-200/50 focus:border-${m.color}-500 bg-white/70 text-2xl font-bold text-gray-900 transition-all border-${m.color}-200 hover:border-${m.color}-300`}
                   />
                 </div>
               ))}
-              <div className="md:col-span-2 flex flex-col sm:flex-row gap-4 pt-8 border-t border-white/20 mt-6">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="flex-1 px-8 py-4 bg-gray-200/80 backdrop-blur-xl rounded-3xl font-bold text-lg shadow-xl hover:bg-gray-300/80 hover:shadow-2xl transition-all border border-gray-300/50"
-                >
-                  Cancelar
-                </button>
+              <div className="lg:col-span-3 pt-8 border-t border-blue-100 mt-8 flex flex-col sm:flex-row gap-4">
                 <button
                   type="submit"
-                  className="flex-1 px-8 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-lg rounded-3xl shadow-2xl hover:shadow-3xl transition-all transform hover:-translate-y-1"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white py-6 px-10 rounded-3xl font-bold text-2xl shadow-2xl hover:shadow-3xl transition-all duration-200"
                 >
-                  Salvar Metas ✅
+                  💾 Salvar Metas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMetasModal(false)}
+                  className="flex-1 bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white py-6 px-10 rounded-3xl font-bold text-2xl shadow-2xl hover:shadow-3xl transition-all duration-200"
+                >
+                  ❌ Cancelar
                 </button>
               </div>
             </form>
@@ -327,4 +492,6 @@ export default function DiarioPage() {
       )}
     </div>
   );
-}
+};
+
+export default DiarioPage;
