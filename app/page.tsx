@@ -84,7 +84,7 @@ export default function DashboardPage() {
             <KPICard
               key={index}
               title={kpi.title}
-              value={kpi.value}
+              value={Number(kpi.value)}
               emoji={kpi.emoji}
               gradient={kpi.gradient}
             />
