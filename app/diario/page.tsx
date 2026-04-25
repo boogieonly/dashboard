@@ -1,4 +1,4 @@
-'use client'
+'use client';
 
 import { useState, useEffect } from 'react';
 import DailyForm from '../components/DailyForm';
@@ -18,15 +18,7 @@ interface DailyEntry {
 export default function DiarioPage() {
   const [dailyData, setDailyData] = useState<DailyEntry[]>([]);
   const [editingDate, setEditingDate] = useState<string | null>(null);
-  const [formData, setFormData] = useState<DailyEntry>({
-    date: '',
-    faturamento: 0,
-    atrasos: 0,
-    vendas: 0,
-    carteiraTotal: 0,
-    previsaoMesVigente: 0,
-    previsaoMesSeguinte: 0,
-  });
+  const [formData, setFormData] = useState<Partial<DailyEntry>>({});
 
   useEffect(() => {
     const saved = localStorage.getItem('dailyData');
@@ -48,78 +40,51 @@ export default function DiarioPage() {
   };
 
   const resetForm = () => {
-    setFormData({
-      date: '',
-      faturamento: 0,
-      atrasos: 0,
-      vendas: 0,
-      carteiraTotal: 0,
-      previsaoMesVigente: 0,
-      previsaoMesSeguinte: 0,
-    });
     setEditingDate(null);
+    setFormData({});
   };
 
   const handleSubmit = (data: DailyEntry) => {
+    let newData = [...dailyData];
     if (editingDate) {
-      setDailyData((prev) =>
-        prev.map((d) => (d.date === editingDate ? data : d))
-      );
+      newData = newData.map((d) => (d.date === editingDate ? data : d));
     } else {
-      setDailyData((prev) => [...prev, data]);
+      newData.push(data);
     }
+    newData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setDailyData(newData);
     resetForm();
   };
 
   const deleteData = (date: string) => {
-    setDailyData((prev) => prev.filter((d) => d.date !== date));
+    setDailyData((prev) => {
+      const newData = prev.filter((d) => d.date !== date);
+      newData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return newData;
+    });
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold text-gray-900 mb-12 text-center">
-          Fechamento Diário
-        </h1>
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900">Diário Financeiro</h1>
+          <p className="mt-4 text-xl text-gray-600">Registre e acompanhe seus dados diários</p>
+        </div>
         <div className="space-y-8">
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">Adicionar/Editar Dados</h2>
-            <DailyForm
-              data={editingDate ? formData : undefined}
-              onSubmit={handleSubmit}
-              onReset={resetForm}
-            />
-          </section>
-
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">Tabela de Dados</h2>
+          <DailyForm
+            data={editingDate ? formData : undefined}
+            onSubmit={handleSubmit}
+            onReset={resetForm}
+          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <DailyTable
-              data={dailyData.map((d) => d.date)}
-              faturamento={dailyData.map((d) => d.faturamento)}
-              atrasos={dailyData.map((d) => d.atrasos)}
-              vendas={dailyData.map((d) => d.vendas)}
-              carteiraTotal={dailyData.map((d) => d.carteiraTotal)}
-              previsaoMesVigente={dailyData.map((d) => d.previsaoMesVigente)}
-              previsaoMesSeguinte={dailyData.map((d) => d.previsaoMesSeguinte)}
+              data={dailyData}
               onEdit={handleEdit}
               onDelete={deleteData}
             />
-          </section>
-
-          <section className="bg-white shadow-xl rounded-lg p-8">
-            <h2 className="text-2xl font-semibold mb-6">Gráficos</h2>
-            <DailyCharts
-              data={dailyData.map((d) => ({
-                date: d.date,
-                faturamento: d.faturamento,
-                atrasos: d.atrasos,
-                vendas: d.vendas,
-                carteiraTotal: d.carteiraTotal,
-                previsaoMesVigente: d.previsaoMesVigente,
-                previsaoMesSeguinte: d.previsaoMesSeguinte,
-              }))}
-            />
-          </section>
+            <DailyCharts data={dailyData} />
+          </div>
         </div>
       </div>
     </div>
