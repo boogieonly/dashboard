@@ -205,9 +205,8 @@ export default function DiarioPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const newEntry: DailyEntry = {
-      date: formData.date,
-      ...formData,
-    } as DailyEntry;
+  ...formData,
+} as DailyEntry;
 
     if (editingEntryDate) {
       setEntries((prev) => prev.map((e) => (e.date === editingEntryDate ? newEntry : e)));
