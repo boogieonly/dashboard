@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 
-type NumericField = 'faturamento' | 'atrasos' | 'vendas' | 'carteiraTotal' | 'previsaoMesAtual' | 'previsaoMesSeguinte';
-
-interface DailyEntry {
+type DailyEntry = {
   date: string;
   faturamento: number;
   atrasos: number;
@@ -12,67 +10,136 @@ interface DailyEntry {
   carteiraTotal: number;
   previsaoMesAtual: number;
   previsaoMesSeguinte: number;
-}
-
-type FieldConfig = {
-  key: NumericField;
-  label: string;
-  emoji: string;
 };
 
-const fields: FieldConfig[] = [
-  { key: 'faturamento', label: 'Faturamento', emoji: '💰' },
-  { key: 'vendas', label: 'Vendas', emoji: '📈' },
-  { key: 'atrasos', label: 'Atrasos', emoji: '⏰' },
-  { key: 'carteiraTotal', label: 'Carteira Total', emoji: '💼' },
-  { key: 'previsaoMesAtual', label: 'Previsão Mês Atual', emoji: '🔮' },
-  { key: 'previsaoMesSeguinte', label: 'Previsão Mês Seguinte', emoji: '📅' },
+type Change = {
+  value: number;
+  direction: 'up' | 'down' | 'neutral';
+};
+
+type Kpi = {
+  key: keyof DailyEntry;
+  title: string;
+  emoji: string;
+  isInverse: boolean;
+  isCurrency: boolean;
+};
+
+const kpis: Kpi[] = [
+  { key: 'faturamento', title: 'Faturamento', emoji: '💰', isInverse: false, isCurrency: true },
+  { key: 'vendas', title: 'Vendas', emoji: '📈', isInverse: false, isCurrency: true },
+  { key: 'atrasos', title: 'Atrasos', emoji: '⏰', isInverse: true, isCurrency: false },
+  { key: 'carteiraTotal', title: 'Carteira Total', emoji: '💼', isInverse: false, isCurrency: true },
+  { key: 'previsaoMesAtual', title: 'Previsão Mês Atual', emoji: '🔮', isInverse: false, isCurrency: true },
+  { key: 'previsaoMesSeguinte', title: 'Previsão Mês Seguinte', emoji: '📅', isInverse: false, isCurrency: true },
 ];
 
-function formatDate(isoDate: string): string {
+const formatCurrency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatNumber = new Intl.NumberFormat('pt-BR');
+
+const formatDateForDisplay = (isoDate: string): string => {
   return new Date(isoDate).toLocaleDateString('pt-BR');
-}
+};
 
-function getPercentageChange(current: number, previous: number | null, isInverse = false): {
-  color: 'green' | 'red' | 'gray';
-  symbol: '↑' | '↓' | '';
-  percentage: string;
-} {
-  if (previous === null || previous === 0) {
-    return { color: 'gray', symbol: '', percentage: '--' };
+const getPercentageChange = (current: number, previous: number, isInverse: boolean): Change => {
+  if (previous === 0) {
+    return { value: 0, direction: 'neutral' };
+  }
+  let change = ((current - previous) / previous) * 100;
+  if (isInverse) {
+    change = -change;
+  }
+  if (change > 0) {
+    return { value: change, direction: 'up' };
+  } else if (change < 0) {
+    return { value: change, direction: 'down' };
+  }
+  return { value: 0, direction: 'neutral' };
+};
+
+function Sparkline({
+  data,
+  isInverse = false,
+  height = 24,
+  width = 80,
+}: {
+  data: number[];
+  isInverse?: boolean;
+  height?: number;
+  width?: number;
+}) {
+  if (data.length < 2) {
+    return (
+      <div className="w-full h-full bg-gray-200 rounded-full flex items-center justify-center">
+        <div className="w-16 h-1 bg-gray-400 rounded-full" />
+      </div>
+    );
   }
 
-  const percentage = isInverse
-    ? ((previous - current) / previous) * 100
-    : ((current - previous) / previous) * 100;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
 
-  if (percentage === 0) {
-    return { color: 'gray', symbol: '', percentage: '0%' };
-  }
-
-  const abs = Math.abs(percentage);
-  const color: 'green' | 'red' = percentage > 0 ? 'green' : 'red';
-  const symbol: '↑' | '↓' = percentage > 0 ? '↑' : '↓';
-  const formatted = `${percentage > 0 ? '+' : ''}${abs.toFixed(1)}%`;
-
-  return { color, symbol, percentage: formatted };
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full block">
+      {data.slice(0, -1).map((_, i) => {
+        const x1 = (i / (data.length - 1)) * width;
+        const y1 = height * (1 - (data[i] - min) / range);
+        const x2 = ((i + 1) / (data.length - 1)) * width;
+        const y2 = height * (1 - (data[i + 1] - min) / range);
+        const delta = data[i + 1] - data[i];
+        const adjDelta = isInverse ? -delta : delta;
+        const color = adjDelta > 0 ? '#10b981' : '#ef4444';
+        return (
+          <polyline
+            key={i}
+            points={`${x1},${y1} ${x2},${y2}`}
+            stroke={color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        );
+      })}
+      <circle
+        cx={width}
+        cy={height * (1 - (data[data.length - 1] - min) / range)}
+        r="3"
+        fill="#3b82f6"
+        stroke="white"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
 }
 
-const DiarioPage = () => {
+export default function DiarioPage() {
   const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
-  const [formData, setFormData] = useState<Partial<DailyEntry>>({
-    date: new Date().toISOString().split('T')[0],
+  const [formData, setFormData] = useState<DailyEntry>({
+    date: '',
+    faturamento: 0,
+    atrasos: 0,
+    vendas: 0,
+    carteiraTotal: 0,
+    previsaoMesAtual: 0,
+    previsaoMesSeguinte: 0,
   });
+  const [editingEntry, setEditingEntry] = useState<DailyEntry | null>(null);
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [entries]);
 
   useEffect(() => {
     const saved = localStorage.getItem('dailyEntries');
     if (saved) {
-      try {
-        setEntries(JSON.parse(saved));
-      } catch {
-        // Ignore invalid data
-      }
+      setEntries(JSON.parse(saved));
+    } else {
+      // Initialize form with today
+      setFormData(prev => ({ ...prev, date: today }));
     }
   }, []);
 
@@ -80,40 +147,51 @@ const DiarioPage = () => {
     localStorage.setItem('dailyEntries', JSON.stringify(entries));
   }, [entries]);
 
-  const sortedEntries = [...entries].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === 'date') {
+      setFormData(prev => ({ ...prev, date: value }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+    }
+  }, []);
 
-  const latest = sortedEntries[0] || null;
-  const previous = sortedEntries[1] || null;
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.date) return;
 
-    const data: DailyEntry = {
-      date: formData.date as string,
-      faturamento: (formData as any).faturamento ?? 0,
-      atrasos: (formData as any).atrasos ?? 0,
-      vendas: (formData as any).vendas ?? 0,
-      carteiraTotal: (formData as any).carteiraTotal ?? 0,
-      previsaoMesAtual: (formData as any).previsaoMesAtual ?? 0,
-      previsaoMesSeguinte: (formData as any).previsaoMesSeguinte ?? 0,
+    const newEntry: DailyEntry = {
+      date: formData.date,
+      faturamento: formData.faturamento,
+      atrasos: formData.atrasos,
+      vendas: formData.vendas,
+      carteiraTotal: formData.carteiraTotal,
+      previsaoMesAtual: formData.previsaoMesAtual,
+      previsaoMesSeguinte: formData.previsaoMesSeguinte,
     };
 
-    if (editingEntry) {
-      setEntries(entries.map((e) => (e.date === editingEntry.date ? data : e)));
-      setEditingEntry(null);
-    } else {
-      const exists = entries.some((e) => e.date === data.date);
-      if (exists) {
-        alert('Entrada para esta data já existe!');
-        return;
-      }
-      setEntries([data, ...entries]);
+    const newEntries = entries.map((entry) =>
+      entry.date === newEntry.date ? newEntry : entry
+    );
+    if (!entries.some((entry) => entry.date === newEntry.date)) {
+      newEntries.push(newEntry);
     }
 
-    setFormData({ date: new Date().toISOString().split('T')[0] });
+    setEntries(newEntries);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setEditingEntry(null);
+    setFormData({
+      date: today,
+      faturamento: 0,
+      atrasos: 0,
+      vendas: 0,
+      carteiraTotal: 0,
+      previsaoMesAtual: 0,
+      previsaoMesSeguinte: 0,
+    });
   };
 
   const handleEdit = (entry: DailyEntry) => {
@@ -121,218 +199,213 @@ const DiarioPage = () => {
     setFormData(entry);
   };
 
-  const handleDelete = (date: string) => {
-    if (confirm('Confirmar exclusão desta entrada?')) {
+  const deleteData = (date: string) => {
+    if (confirm('Tem certeza que deseja deletar esta entrada?')) {
       setEntries(entries.filter((e) => e.date !== date));
+      if (editingEntry?.date === date) {
+        resetForm();
+      }
     }
   };
 
-  const updateFormField = (key: NumericField, value: string) => {
-    const numValue = value ? parseFloat(value) : 0;
-    setFormData((prev) => ({ ...prev, [key]: numValue }));
+  const fieldLabels: Record<keyof DailyEntry, string> = {
+    date: 'Data',
+    faturamento: 'Faturamento (R$)',
+    atrasos: 'Atrasos',
+    vendas: 'Vendas (R$)',
+    carteiraTotal: 'Carteira Total (R$)',
+    previsaoMesAtual: 'Previsão Mês Atual (R$)',
+    previsaoMesSeguinte: 'Previsão Mês Seguinte (R$)',
   };
 
+  const getFormatter = (isCurrency: boolean) => (isCurrency ? formatCurrency : formatNumber);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-blue-50 to-purple-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-12 text-center drop-shadow-lg">
-          Diário de Performance
+        <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-12 text-center drop-shadow-lg">
+          Diário de Vendas
         </h1>
 
-        {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {fields.map((field) => {
-            const currentVal = latest ? (latest[field.key] as number) : 0;
-            const prevVal =
-              previous ? (previous[field.key] as number) : null;
-            const change = getPercentageChange(
-              currentVal,
-              prevVal,
-              field.key === 'atrasos'
-            );
+          {kpis.map((kpi) => {
+            const latest = sortedEntries[0];
+            const prev = sortedEntries[1];
+            const value = latest ? (latest[kpi.key] as number) : 0;
+            const prevValue = prev ? (prev[kpi.key] as number) : 0;
+            const change = getPercentageChange(value, prevValue, kpi.isInverse);
+            const last7Data = sortedEntries
+              .slice(0, 7)
+              .slice()
+              .reverse()
+              .map((e) => (e[kpi.key] as number));
+            const formatter = getFormatter(kpi.isCurrency);
+            const formattedValue = formatter.format(value);
+
             return (
               <div
-                key={field.key}
-                className="group bg-white/70 backdrop-blur-2xl rounded-3xl p-8 shadow-2xl border border-white/50 hover:shadow-3xl hover:-translate-y-2 transition-all duration-500 hover:bg-white/90"
+                key={kpi.key}
+                className="group bg-white/70 backdrop-blur-xl shadow-2xl border border-white/50 rounded-3xl p-8 hover:shadow-3xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/90"
               >
-                <div className="flex items-center justify-between mb-6">
-                  <span className="text-4xl group-hover:scale-110 transition-transform duration-300">
-                    {field.emoji}
+                <div className="flex items-start justify-between mb-6">
+                  <span className="text-4xl md:text-5xl drop-shadow-lg group-hover:scale-110 transition-transform duration-200">
+                    {kpi.emoji}
                   </span>
-                  <span
-                    className={`text-3xl font-bold transition-all duration-300 ${
-                      change.color === 'green'
-                        ? 'text-green-500 animate-pulse'
-                        : change.color === 'red'
-                        ? 'text-red-500 -rotate-12'
-                        : 'text-gray-400'
-                    }`}
-                  >
-                    {change.symbol}
-                  </span>
+                  <h3 className="text-xl font-bold text-gray-800 mt-2 ml-4 flex-1 text-left">
+                    {kpi.title}
+                  </h3>
                 </div>
-                <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
-                  {field.label}
-                </p>
-                <p className="text-4xl lg:text-5xl font-black text-gray-900 mb-3 drop-shadow-md">
-                  {currentVal.toLocaleString('pt-BR')}
-                </p>
-                <p
-                  className={`text-lg font-bold transition-colors duration-300 ${
-                    change.color === 'green'
-                      ? 'text-green-500'
-                      : change.color === 'red'
-                      ? 'text-red-500'
-                      : 'text-gray-400'
-                  }`}
-                >
-                  {change.percentage}
-                </p>
+                <div className="text-3xl md:text-4xl font-black text-gray-900 mb-4 drop-shadow-md">
+                  {formattedValue}
+                </div>
+                <div className="flex items-center text-lg font-semibold mb-6">
+                  {prev ? (
+                    <>
+                      {change.value === 0 ? '—' : `${change.value > 0 ? '+' : ''}${change.value.toFixed(1)}%`}
+                      <span
+                        className={`ml-2 text-2xl transition-colors ${
+                          change.direction === 'up'
+                            ? 'text-green-500 animate-bounce'
+                            : change.direction === 'down'
+                            ? 'text-red-500 animate-pulse'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        {change.direction === 'up' ? '↗️' : change.direction === 'down' ? '↘️' : '➡️'}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-500">—</span>
+                  )}
+                </div>
+                <div className="h-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded-2xl overflow-hidden border border-gray-300/50 shadow-inner">
+                  <Sparkline data={last7Data} isInverse={kpi.isInverse} />
+                </div>
               </div>
             );
           })}
         </div>
 
-        {/* Form */}
-        <div className="bg-white/70 backdrop-blur-2xl rounded-3xl p-8 md:p-12 shadow-2xl border border-white/50 mb-16">
-          <h2 className="text-3xl font-black text-gray-900 mb-8 text-center">
-            {editingEntry ? '✏️ Editar Entrada' : '➕ Nova Entrada'}
-          </h2>
+        <div className="bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 md:p-12 mb-12 border border-white/50">
+          <div className="flex items-center mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 flex-1">
+              {editingEntry ? 'Editar Entrada' : 'Nova Entrada'}
+            </h2>
+            {editingEntry && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-6 py-2 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-colors font-medium"
+              >
+                Nova
+              </button>
+            )}
+          </div>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-3">
-                📅 Data
-              </label>
-              <input
-                type="date"
-                value={formData.date || ''}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 shadow-inner hover:shadow-md"
-                required
-              />
-              {formData.date && (
-                <p className="text-xs text-gray-500 mt-2 font-mono">
-                  {formatDate(formData.date as string)}
-                </p>
-              )}
-            </div>
-            {fields.map((field) => (
-              <div key={field.key}>
-                <label className="block text-sm font-bold text-gray-700 mb-3">
-                  {field.emoji} {field.label}
+            {Object.entries(fieldLabels).map(([key, label]) => (
+              <div key={key} className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700 capitalize">
+                  {label}
                 </label>
                 <input
-                  type="number"
-                  step="any"
-                  value={formData[field.key] ?? ''}
-                  onChange={(e) => updateFormField(field.key, e.target.value)}
-                  className="w-full p-4 border-2 border-gray-200 rounded-2xl focus:ring-4 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 shadow-inner hover:shadow-md"
+                  name={key}
+                  type={key === 'date' ? 'date' : 'number'}
+                  step={key === 'atrasos' ? '1' : '0.01'}
+                  value={formData[key as keyof DailyEntry]?.toString() || ''}
+                  onChange={handleInputChange}
+                  className="w-full p-4 border border-gray-300 rounded-2xl focus:ring-4 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm hover:shadow-md transition-all duration-200 text-lg"
                   required
-                  min="0"
                 />
               </div>
             ))}
-            <div className="col-span-full flex flex-col sm:flex-row gap-4 pt-6">
+            <div className="col-span-full flex flex-col sm:flex-row gap-4 pt-4">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-gray-600 hover:to-gray-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
+              >
+                Cancelar
+              </button>
               <button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-4 px-8 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:from-blue-700 hover:to-blue-800 transform hover:-translate-y-1 transition-all duration-300"
+                className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-4 px-8 rounded-2xl font-bold text-lg hover:from-blue-600 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               >
-                {editingEntry ? 'Atualizar 📝' : 'Adicionar ➕'}
+                {editingEntry ? 'Atualizar' : 'Salvar'}
               </button>
-              {editingEntry && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingEntry(null);
-                    setFormData({ date: new Date().toISOString().split('T')[0] });
-                  }}
-                  className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 text-white py-4 px-8 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:from-gray-600 hover:to-gray-700 transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  Cancelar ❌
-                </button>
-              )}
             </div>
           </form>
         </div>
 
-        {/* Table */}
-        {sortedEntries.length > 0 && (
-          <div className="bg-white/70 backdrop-blur-2xl rounded-3xl p-8 md:p-12 shadow-2xl border border-white/50">
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-3xl font-black text-gray-900">📊 Histórico</h2>
-              <span className="text-sm text-gray-500 font-medium">
-                {sortedEntries.length} entradas
-              </span>
+        <div className="space-y-4">
+          {sortedEntries.length === 0 ? (
+            <div className="text-center py-20 bg-white/70 backdrop-blur-xl rounded-3xl shadow-xl border border-dashed border-gray-300">
+              <p className="text-2xl text-gray-500 mb-4">📝</p>
+              <p className="text-xl font-semibold text-gray-600">Nenhuma entrada ainda. Adicione a primeira!</p>
             </div>
-            <div className="overflow-x-auto rounded-2xl border border-gray-200">
-              <table className="w-full table-auto divide-y divide-gray-200">
-                <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">
-                      Data
-                    </th>
-                    {fields.map((field) => (
-                      <th
-                        key={field.key}
-                        className="px-4 py-4 text-center text-lg font-bold text-gray-900"
-                        title={field.label}
-                      >
-                        {field.emoji}
-                      </th>
-                    ))}
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {sortedEntries.map((entry) => (
-                    <tr
-                      key={entry.date}
-                      className="hover:bg-blue-50 transition-all duration-200"
-                    >
-                      <td className="px-6 py-5 font-semibold text-gray-900">
-                        {formatDate(entry.date)}
-                      </td>
-                      {fields.map((field) => (
-                        <td
-                          key={field.key}
-                          className="px-4 py-5 text-center text-lg font-mono text-gray-800"
-                        >
-                          {entry[field.key].toLocaleString('pt-BR')}
-                        </td>
-                      ))}
-                      <td className="px-6 py-5 font-medium">
-                        <button
-                          onClick={() => handleEdit(entry)}
-                          className="text-blue-600 hover:text-blue-900 mr-6 font-bold transition-colors duration-200 hover:underline"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDelete(entry.date)}
-                          className="text-red-600 hover:text-red-900 font-bold transition-colors duration-200 hover:underline"
-                        >
-                          Excluir
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-        {sortedEntries.length === 0 && (
-          <div className="text-center py-24">
-            <div className="text-6xl mb-4">📭</div>
-            <h3 className="text-2xl font-bold text-gray-600 mb-2">Nenhuma entrada ainda</h3>
-            <p className="text-gray-500 mb-8">Adicione a primeira entrada acima!</p>
-          </div>
-        )}
+          ) : (
+            sortedEntries.map((entry) => (
+              <div
+                key={entry.date}
+                className="bg-white/90 backdrop-blur-xl shadow-xl rounded-2xl p-6 md:p-8 border border-gray-200 hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border-l-4 border-blue-500"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+                      <span className="text-2xl">📅</span>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-900">{formatDateForDisplay(entry.date)}</h3>
+                      <p className="text-sm text-gray-500">Clique em editar para alterar</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-6 mb-8 text-center">
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">💰 Faturamento</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatCurrency.format(entry.faturamento)}</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">📈 Vendas</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatCurrency.format(entry.vendas)}</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">⏰ Atrasos</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatNumber.format(entry.atrasos)}</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">💼 Carteira</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatCurrency.format(entry.carteiraTotal)}</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">🔮 Previsão Atual</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatCurrency.format(entry.previsaoMesAtual)}</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-semibold text-gray-700 block mb-1">📅 Previsão Próxima</span>
+                    <span className="text-2xl font-bold text-gray-900">{formatCurrency.format(entry.previsaoMesSeguinte)}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(entry)}
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 px-6 rounded-xl font-bold hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-xl transition-all duration-300"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteData(entry.date)}
+                    className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 px-6 rounded-xl font-bold hover:from-red-600 hover:to-red-700 shadow-lg hover:shadow-xl transition-all duration-300"
+                  >
+                    Deletar
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
-};
-
-export default DiarioPage;
+}
