@@ -18,7 +18,7 @@ const metricKeys: MetricKey[] = ['faturamento', 'vendas', 'atrasos', 'carteira',
 
 const emojis: Record<MetricKey, string> = {
   faturamento: '💰',
-  vendas: '📈',
+  vendas: '💲',
   atrasos: '⚠️',
   carteira: '💼',
   previsaoAtual: '🔮',
