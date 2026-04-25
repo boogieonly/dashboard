@@ -1,73 +1,129 @@
-import { useState, useEffect } from 'react';
+'use client'
 
-type DiaryEntry = {
-  id: string;
+import React, { useState, useEffect } from 'react';
+import { DailyForm, DailyTable, DailyCharts } from '../components/';
+
+interface DailyEntry {
   date: string;
-  content: string;
-};
+  faturamento: number;
+  atrasos: number;
+  vendas: number;
+  carteiraTotal: number;
+  previsaoMesVigente: number;
+  previsaoMesSeguinte: number;
+}
 
-export default function DiarioPage() {
-  const [entries, setEntries] = useState<DiaryEntry[]>([]);
-  const [newContent, setNewContent] = useState('');
+const Diario = () => {
+  const [dailyData, setDailyData] = useState<DailyEntry[]>([]);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [formData, setFormData] = useState<DailyEntry>({
+    date: '',
+    faturamento: 0,
+    atrasos: 0,
+    vendas: 0,
+    carteiraTotal: 0,
+    previsaoMesVigente: 0,
+    previsaoMesSeguinte: 0,
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem('diary');
-    if (saved) {
-      setEntries(JSON.parse(saved));
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('dailyData');
+      if (saved) {
+        setDailyData(JSON.parse(saved));
+      }
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('diary', JSON.stringify(entries));
-  }, [entries]);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dailyData', JSON.stringify(dailyData));
+    }
+  }, [dailyData]);
 
-  const addEntry = () => {
-    if (!newContent.trim()) return;
+  const sortData = (data: DailyEntry[]): DailyEntry[] =>
+    [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const entry: DiaryEntry = {
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString('pt-BR'),
-      content: newContent.trim(),
-    };
+  const handleFormChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === 'date' ? value : Number(value) || 0,
+    }));
+  };
 
-    setEntries([entry, ...entries]);
-    setNewContent('');
+  const resetForm = () => {
+    setFormData({
+      date: '',
+      faturamento: 0,
+      atrasos: 0,
+      vendas: 0,
+      carteiraTotal: 0,
+      previsaoMesVigente: 0,
+      previsaoMesSeguinte: 0,
+    });
+    setEditingDate(null);
+  };
+
+  const handleEdit = (date: string) => {
+    const entry = dailyData.find((d) => d.date === date);
+    if (entry) {
+      setFormData(entry);
+      setEditingDate(date);
+    }
+  };
+
+  const addData = () => {
+    if (!formData.date.trim()) return;
+    const newEntry: DailyEntry = { ...formData };
+    setDailyData((prev) => sortData([...prev, newEntry]));
+    resetForm();
+  };
+
+  const updateData = () => {
+    if (!editingDate || !formData.date.trim()) return;
+    const updatedEntry: DailyEntry = { ...formData };
+    setDailyData((prev) =>
+      sortData(prev.map((d) => (d.date === editingDate ? updatedEntry : d)))
+    );
+    resetForm();
+  };
+
+  const deleteData = (dateToDelete: string) => {
+    setDailyData((prev) => sortData(prev.filter((d) => d.date !== dateToDelete)));
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (editingDate) {
+      updateData();
+    } else {
+      addData();
+    }
   };
 
   return (
-    <div className="container mx-auto p-8 max-w-4xl">
-      <h1 className="text-4xl font-bold mb-12 text-center text-gray-800">Meu Diário</h1>
-      
-      <div className="mb-12 p-8 bg-white shadow-lg rounded-xl">
-        <textarea
-          value={newContent}
-          onChange={(e) => setNewContent(e.target.value)}
-          placeholder="O que aconteceu hoje? Escreva sua entrada de diário..."
-          className="w-full p-6 border border-gray-300 rounded-lg resize-vertical min-h-[120px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
-          rows={4}
-        />
-        <button
-          onClick={addEntry}
-          className="mt-6 w-full bg-blue-600 text-white py-4 px-8 rounded-lg font-semibold text-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition duration-200"
-        >
-          Adicionar Nova Entrada
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        {entries.length === 0 ? (
-          <p className="text-center text-gray-500 text-xl py-12">Nenhuma entrada ainda. Adicione a primeira!</p>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className="p-8 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-md rounded-xl border-l-4 border-blue-500">
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">{entry.date}</h2>
-              </div>
-              <p className="text-lg leading-relaxed text-gray-700 whitespace-pre-wrap">{entry.content}</p>
-            </div>
-          ))
-        )}
-      </div>
+    <div className="container mx-auto p-8 space-y-8">
+      <h1 className="text-4xl font-bold text-center text-gray-800 mb-12">
+        Fechamento Diário
+      </h1>
+      <DailyForm
+        formData={formData}
+        onChange={handleFormChange}
+        onSubmit={handleSubmit}
+        onReset={resetForm}
+        editingDate={editingDate}
+      />
+      <DailyTable
+        data={dailyData}
+        onEdit={handleEdit}
+        onDelete={deleteData}
+      />
+      <DailyCharts data={dailyData} />
     </div>
   );
-}
+};
+
+export default Diario;
