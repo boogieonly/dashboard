@@ -20,7 +20,7 @@ const Sidebar = () => {
 
   const navItems: NavItem[] = [
 
-    { href: '/dashboard', label: 'Página Inicial', icon: '🏠' },
+    { href: '/', label: 'Página Inicial', icon: '🏠' },
 
     { href: '/diario', label: 'Fechamento Diário', icon: '📅' },
 
