@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import LMEQuotes from './components/LMEQuotes'
+
+export default function Home() {
+  return <LMEQuotes />
+}
 
 type Commodity = {
   name: string;
